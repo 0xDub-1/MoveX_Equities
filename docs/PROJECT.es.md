@@ -29,7 +29,7 @@ Las acciones tokenizadas están llegando rápido a Solana, y te permiten expresa
 
 Existen protocolos de opciones, pero le piden al retail entender strikes, vencimientos, griegas y superficies de volatilidad implícita. Ese es un muro que la mayoría nunca escala.
 
-MoveX Equities colapsa la volatilidad en un solo número que cualquiera puede razonar: **la acción se movió 3.1% hoy, ¿eso fue más o menos que 2.6%?**
+MoveX Equities colapsa la volatilidad en un solo número que cualquiera puede razonar: **la acción se movió 2.0% hoy, ¿eso fue más o menos que 1.55%?**
 
 ---
 
@@ -38,16 +38,16 @@ MoveX Equities colapsa la volatilidad en un solo número que cualquiera puede ra
 ### 3.1 El ciclo diario
 
 ```
-16:00 ET  (día D-1)   Cierra la sesión anterior y se liquida.
-                      Se abren los mercados de mañana. Se calcula y congela el strike.
+15:55 ET  (día D-2)   Se calcula el strike con las últimas 20 sesiones y se congela.
+                      El mercado abre a depósitos.
                           |
-                          |   ventana de depósito (~17.5 horas)
+                          |   ventana de depósito (~24 horas)
                           |   aquí también puedes retirar libremente
                           ↓
-09:30 ET  (día D)     LOCK. Se cierran los depósitos.
-                      Se lee de Pyth el precio de referencia (la apertura).
+16:00 ET  (día D-1)   LOCK. Se cierran los depósitos.
+                      Se lee de Pyth el precio de referencia (el cierre de ese día).
                           |
-                          |   sesión de trading
+                          |   gap nocturno, y después la sesión completa
                           ↓
 16:00 ET  (día D)     SETTLE. Se lee de Pyth el precio de liquidación (el cierre).
                       movimiento = |liquidación - referencia| / referencia
@@ -57,20 +57,28 @@ MoveX Equities colapsa la volatilidad en un solo número que cualquiera puede ra
                       CLAIM. Los ganadores retiran su parte cuando quieran.
 ```
 
-En la v1 medimos **de apertura a cierre** (intradía). Las dos lecturas de Pyth caen dentro del horario de mercado, lo que mantiene simple el manejo del oráculo. Los mercados de cierre a cierre (que capturan los gaps nocturnos, donde ocurre buena parte del movimiento de acciones individuales) quedan como variante de v2.
+Medimos **de cierre a cierre**, que es el número que cualquier persona ya entiende cuando dice "cuánto se movió hoy".
+
+Es una decisión deliberada frente a lo intradía (de apertura a cierre), por una razón decisiva: **medir intradía vuelve invisibles los earnings.** Una empresa reporta después del cierre, la acción abre al día siguiente con un gap del 8%, y luego deriva plana durante toda la sesión. Un mercado intradía registraría un movimiento del 0.4% y pagaría BELOW en el día más volátil del trimestre. De cierre a cierre captura el gap, que es donde vive buena parte de la volatilidad de una acción individual.
+
+Las dos lecturas del oráculo caen a las 16:00 ET, con el mercado vivo, así que el manejo de staleness se mantiene simple.
+
+Una salvedad que no estamos tapando: si una lectura de Pyth a las 16:00:00 devuelve el print oficial de cierre o el precio del continuo justo antes de la subasta está sin verificar, y se va a medir antes de congelar la liquidación. Ver 11.
+
+En todo momento hay dos mercados por peldaño en vuelo: uno bloqueado y midiendo, otro abierto a depósitos. Siempre hay algo que operar.
 
 ### 3.2 Dos botes, sin orderbook
 
 No hay libro de órdenes, ni motor de matching, ni precio continuo. Hay dos botes y eliges uno:
 
 ```
-Mercado: NVDA · sesión 2026-09-16 · strike 2.6%
+Mercado: NVDA · sesión 2026-09-16 · strike 1.55%
 
      ┌──────────────────────┐   ┌──────────────────────┐
      │        ABOVE         │   │        BELOW         │
      │                      │   │                      │
      │  se mueve MÁS de     │   │  se mueve MENOS de   │
-     │  2.6% (hacia donde   │   │  2.6%                │
+     │  1.55% (hacia donde  │   │  1.55%               │
      │  sea)                │   │                      │
      └──────────────────────┘   └──────────────────────┘
 ```
@@ -101,20 +109,20 @@ Apostar al lado impopular paga más. Mecánica parimutuel estándar, la misma de
 
 Alice deposita **$1,000 en BELOW** en el mercado de NVDA de arriba.
 
-NVDA abre en 178.40 y cierra en 184.10.
+El cierre de referencia fue 218.29. La sesión siguiente cierra en 213.90.
 
 ```
-movimiento = |184.10 - 178.40| / 178.40 = 3.20%
-3.20% > 2.60%  →  gana ABOVE
+movimiento = |213.90 - 218.29| / 218.29 = 2.01%
+2.01% > 1.55%  →  gana ABOVE
 ```
 
 Alice pierde sus $1,000.
 
-Ahora al revés. NVDA cierra en 180.70:
+Ahora al revés. NVDA cierra en 220.15:
 
 ```
-movimiento = |180.70 - 178.40| / 178.40 = 1.29%
-1.29% < 2.60%  →  gana BELOW
+movimiento = |220.15 - 218.29| / 218.29 = 0.85%
+0.85% < 1.55%  →  gana BELOW
 
 Participación de Alice en el bote BELOW:  1,000 / 30,000 = 3.33%
 Bote tras el 1% de fee del protocolo:      $99,000
@@ -133,11 +141,14 @@ Así que ningún humano lo elige.
 ### 4.1 La fórmula
 
 ```
-1. Tomas las últimas 20 sesiones del ticker.
-2. Para cada una calculas el movimiento absoluto:  |cierre - apertura| / apertura
+1. Tomas las últimas 20 sesiones completas del ticker.
+2. Para cada una, el movimiento absoluto de cierre a cierre:
+      |cierre - cierre_previo| / cierre_previo
 3. Ordenas los 20 valores.
 4. Lees los percentiles. Cada uno se convierte en un strike.
 ```
+
+El paso 2 mide exactamente lo mismo con lo que liquida el mercado (3.1). Calibrar con una definición y liquidar con otra valoraría mal todos los peldaños, en silencio.
 
 Usamos **percentiles empíricos**, no un modelo de volatilidad. La propiedad que importa: cada strike lleva su tasa histórica **incorporada por construcción**.
 
@@ -155,26 +166,29 @@ Para orientarse: bajo normalidad la mediana del movimiento absoluto equivale a a
 
 ### 4.2 Ejemplo trabajado
 
-Las últimas 20 sesiones de NVDA, movimiento absoluto, ordenadas:
+Las últimas 20 sesiones de NVDA, movimiento absoluto de cierre a cierre, ordenadas. Datos reales, ventana que termina el 2026-09-11:
 
 ```
-0.8  1.1  1.2  1.4  1.5 │ 1.7  1.9  2.1  2.3  2.5 │ 2.7  2.9  3.1  3.4  3.6 │ 3.9  4.2  4.8  5.3  6.1
-                        ↑                         ↑                         ↑
-                    P25 = 1.7%                P50 = 2.6%                P75 = 3.7%
+0.03  0.06  0.07  0.33  0.84 │ 0.91  0.98  0.99  1.48  1.51 │ 1.59  1.80  2.01  2.19  2.34 │ 2.37  2.91  3.21  4.57  8.74
+                             ↑                              ↑                              ↑
+                        P25 = 0.89%                   P50 = 1.55%                    P75 = 2.35%
 ```
 
-Esos tres números son los tres strikes de la sesión. Cuando un usuario pregunte "¿por qué 2.6%?", la respuesta es "porque 10 de las últimas 20 sesiones de NVDA se movieron más que eso y 10 se movieron menos. Aquí están los 20 números." La interfaz muestra la serie completa.
+Esos tres números son los tres strikes de la sesión. Cuando un usuario pregunte "¿por qué 1.55%?", la respuesta es "porque 10 de las últimas 20 sesiones de NVDA se movieron más que eso y 10 se movieron menos. Aquí están los 20 números." La interfaz muestra la serie completa.
+
+Fíjate en el 8.74% del borde derecho, casi seguro un día de earnings o un titular grande. La mediana ni se inmuta. Una media o una desviación estándar habrían sido arrastradas hacia arriba por esa única sesión, que es justamente por lo que la escalera se construye sobre cuantiles.
 
 ### 4.3 Calibración ilustrativa
 
-Cada ticker se autocalibra. Sin configuración, sin ajuste manual. Los valores de abajo son el strike P50.
+Cada ticker se autocalibra. Sin configuración, sin ajuste manual. Valores reales, de cierre a cierre, ventana de 20 sesiones terminando el 2026-09-11:
 
-| Ticker | P50 diario típico |
-|---|---|
-| SPY | ~0.6% |
-| AAPL | ~1.1% |
-| NVDA | ~2.6% |
-| TSLA | ~3.4% |
+| Ticker | TIGHT (P25) | FAIR (P50) | WIDE (P75) |
+|---|---|---|---|
+| SPY | 0.30% | 0.45% | 0.67% |
+| NVDA | 0.89% | 1.55% | 2.35% |
+| TSLA | 0.71% | 1.71% | 4.04% |
+
+Estos valores se desplazan cada día conforme la ventana avanza. La ventana de arriba es un tramo relativamente tranquilo para NVDA; en un mes volátil el mismo cálculo produce strikes bastante más anchos sin que nadie toque una configuración.
 
 ### 4.4 Transparencia honesta sobre la confianza
 
@@ -225,9 +239,9 @@ NVDA · sesión 2026-09-16
 ┌─────────┬───────────┬────────┬───────┬────────┬─────────────────┐
 │ Nivel   │ Percentil │ Strike │ ABOVE │ BELOW  │ Prob. implícita │
 ├─────────┼───────────┼────────┼───────┼────────┼─────────────────┤
-│ TIGHT   │    P25    │  1.7%  │  $80k │  $20k  │  80% above      │
-│ FAIR    │    P50    │  2.6%  │  $70k │  $30k  │  70% above      │
-│ WIDE    │    P75    │  3.7%  │  $25k │  $75k  │  25% above      │
+│ TIGHT   │    P25    │  0.89% │  $80k │  $20k  │  80% above      │
+│ FAIR    │    P50    │  1.55% │  $70k │  $30k  │  70% above      │
+│ WIDE    │    P75    │  2.35% │  $25k │  $75k  │  25% above      │
 └─────────┴───────────┴────────┴───────┴────────┴─────────────────┘
 ```
 
@@ -240,17 +254,17 @@ Tres strikes parten el espacio de resultados en cuatro ventanas, y como los stri
 ```
 NVDA · hoy
 
- ┌──────────┬─────────────┬─────────────┬──────────┐
- │  < 1.7%  │  1.7 - 2.6% │  2.6 - 3.7% │  > 3.7%  │
- │          │             │             │          │
- │   25%    │     25%     │     25%     │   25%    │
- └──────────┴─────────────┴─────────────┴──────────┘
-    plano       tranquilo     movido       día loco
+ ┌───────────┬───────────────┬───────────────┬───────────┐
+ │  < 0.89%  │ 0.89 - 1.55%  │ 1.55 - 2.35%  │  > 2.35%  │
+ │           │               │               │           │
+ │    25%    │      25%      │      25%      │    25%    │
+ └───────────┴───────────────┴───────────────┴───────────┘
+     plano       tranquilo        movido       día loco
 ```
 
 La diferencia crítica respecto a buckets realmente excluyentes: **lo que se muestra son ventanas, lo que se opera son los tres mercados binarios.**
 
-Para tomar la ventana de "2.6 a 3.7%", un trader compra ABOVE en FAIR y BELOW en WIDE. Si la sesión termina en 3.8%, gana una pata y pierde la otra en vez de irse a cero por una décima de punto. Los mercados de opciones reales funcionan exactamente así: ves una escalera de strikes, y los spreads y mariposas se construyen combinando peldaños.
+Para tomar la ventana de "1.55 a 2.35%", un trader compra ABOVE en FAIR y BELOW en WIDE. Si la sesión termina en 2.4%, gana una pata y pierde la otra en vez de irse a cero por cinco centésimas de punto. Los mercados de opciones reales funcionan exactamente así: ves una escalera de strikes, y los spreads y mariposas se construyen combinando peldaños.
 
 ### 5.4 Cuántos peldaños: la regla de escalado
 
@@ -282,7 +296,7 @@ Market  (PDA: ["market", ticker, session_date, tier])
 ├── pyth_feed           cuenta de precio de Pyth para esta acción
 ├── session_date        el día de mercado que se está midiendo
 ├── tier                Tight | Fair | Wide
-├── strike_bps          ej. 260 = 2.60%
+├── strike_bps          ej. 155 = 1.55%
 ├── state               Open | Locked | Settled | Voided
 ├── reference_price     se escribe en el lock
 ├── settlement_price    se escribe en el settle
@@ -391,14 +405,14 @@ Es una restricción real de desarrollo. Tres mitigaciones, todas dentro del alca
 - Mercado secundario / salida anticipada después del lock
 - Leverage y margen
 - Cálculo del strike on-chain
-- Mercados de cierre a cierre con gaps nocturnos
+- Mercados intradía (apertura a cierre) como segunda línea de producto
 - Despliegue en mainnet
 
 ### Roadmap posterior al hackathon
 
 1. **Posiciones transferibles.** Convertir `Position` en un token para poder venderla antes de la liquidación. Es el camino más barato hacia una salida sin construir un libro de órdenes.
 2. **Strike on-chain o comprometido.** Publicar un hash de la serie de entrada al crear el mercado, para que el strike pase de reproducible a verificable.
-3. **Mercados de cierre a cierre.** Capturar los gaps nocturnos, donde vive buena parte de la volatilidad de acciones individuales.
+3. **Mercados intradía junto a los diarios.** De cierre a cierre es el default correcto porque captura el gap, pero un mercado de solo sesión es un instrumento genuinamente distinto: aísla el rango intradía del riesgo nocturno. Vale la pena ofrecerlo cuando los mercados diarios tengan liquidez.
 4. **Mercados continuos.** Un libro de órdenes real con precio de volatilidad en vivo. Eso es MoveX propiamente dicho, y ya existe en HyperEVM.
 
 ---
@@ -422,8 +436,9 @@ Ambos responden la misma pregunta, que es la tesis de la compañía entera: **op
 
 ## 11. Preguntas abiertas
 
+- **¿Una lectura de Pyth a las 16:00 equivale al cierre oficial?** Sin verificar, y es lo más importante de esta lista. El cierre oficial sale de la subasta de cierre de las 16:00:00, que imprime segundos o minutos después, así que una lectura a las 16:00:00 exactas captura el mercado continuo justo antes. Como los strikes se calibran sobre cierres oficiales, liquidar sobre otra cosa significa calibrar con una definición y liquidar con otra, que es justo lo que advierte 4.1. Se está midiendo contra el feed vivo antes de congelar la lógica de liquidación. Ver `ROADMAP.md`, Phase 3.
 - **Nivel de fee.** El 1% del bote es un valor provisional. Necesita decisión antes de mainnet, no antes del hackathon.
 - **Umbral para añadir peldaños.** La regla de escalado de 5.4 dice que los peldaños se añaden cuando los botes son suficientemente profundos, pero el umbral concreto en dólares está sin fijar. Necesita datos de uso real.
 - **Bote mínimo viable.** Por debajo de cierto tamaño de bote los ratios se vuelven ridículos. Considerar un mínimo por debajo del cual el mercado se anula en el lock.
 - **Ventana de lookback.** 20 sesiones es la elección estándar, pero ventanas más cortas reaccionan más rápido a cambios de régimen. EWMA (RiskMetrics, lambda 0.94) es la mejora natural, a costa de perder la verificabilidad de "cuenta tú mismo los números" que hace tan fácil defender los percentiles.
-- **Interpolación de percentiles.** Con 20 muestras, P25 y P75 caen entre observaciones. Usamos interpolación lineal; la convención exacta hay que fijarla en el keeper para que los resultados sean reproducibles.
+- ~~**Interpolación de percentiles.**~~ Resuelto. Con 20 muestras P25 y P75 caen entre observaciones, así que el keeper interpola linealmente entre los dos vecinos. Escoger la observación más cercana sesgaría P50 hacia un lado de la distribución, y ese es justo el peldaño que tiene que ser una moneda al aire de verdad. La convención queda fijada por tests contra la serie publicada de NVDA.

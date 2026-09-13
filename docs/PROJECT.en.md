@@ -38,9 +38,10 @@ MoveX Equities collapses volatility into a single number a normal person can rea
 ### 3.1 The daily cycle
 
 ```
-16:00 ET  (day D-2)   Market opens for deposits. Strike computed and frozen.
+15:55 ET  (day D-2)   Strike computed from the trailing 20 sessions and frozen.
+                      Market opens for deposits.
                           |
-                          |   deposit window (24 hours)
+                          |   deposit window (~24 hours)
                           |   you can also withdraw freely here
                           ↓
 16:00 ET  (day D-1)   LOCK. Deposits close.
@@ -61,6 +62,8 @@ We measure **close to close**, which is the number a normal person already means
 This is a deliberate choice over intraday (open to close), for one decisive reason: **intraday measurement makes earnings invisible.** A company reports after the close, the stock gaps 8% at the next open, then drifts flat through the session. An intraday market would record a 0.4% move and pay out BELOW on the most volatile day of the quarter. Close-to-close captures the gap, which is where a large share of single-stock volatility actually lives.
 
 Both oracle reads land at 16:00 ET, a live market moment, so staleness handling stays simple.
+
+One caveat we are not glossing over: whether a Pyth read at 16:00:00 returns the official closing print or the continuous price just before the closing auction is unverified, and it is being measured before settlement is frozen. See 11.
 
 At any time two markets per rung are in flight: one locked and measuring, one open for deposits. There is always something to trade.
 
@@ -137,11 +140,14 @@ So no human picks it.
 ### 4.1 The formula
 
 ```
-1. Take the last 20 trading sessions for the ticker.
-2. For each, compute the absolute session move:  |close - open| / open
+1. Take the last 20 completed trading sessions for the ticker.
+2. For each, the absolute close-to-close move:  |close - prev_close| / prev_close
 3. Sort the 20 values.
 4. Read off the percentiles. Each one becomes a strike.
 ```
+
+Step 2 measures the same thing the market settles on (3.1). Calibrating on
+one definition and settling on another would silently misprice every rung.
 
 We use **empirical percentiles**, not a volatility model. The property that matters: every strike carries its historical base rate **by construction**.
 
@@ -177,7 +183,7 @@ Each ticker self-calibrates. No configuration, no manual tuning. Live values, cl
 
 | Ticker | TIGHT (P25) | FAIR (P50) | WIDE (P75) |
 |---|---|---|---|
-| SPY | 0.30% | 0.45% | 0.66% |
+| SPY | 0.30% | 0.45% | 0.67% |
 | NVDA | 0.89% | 1.55% | 2.35% |
 | TSLA | 0.71% | 1.71% | 4.04% |
 
@@ -289,7 +295,7 @@ Market  (PDA: ["market", ticker, session_date, tier])
 ├── pyth_feed           Pyth price account for this equity
 ├── session_date        the trading day being measured
 ├── tier                Tight | Fair | Wide
-├── strike_bps          e.g. 260 = 2.60%
+├── strike_bps          e.g. 155 = 1.55%
 ├── state               Open | Locked | Settled | Voided
 ├── reference_price     written at lock
 ├── settlement_price    written at settle
@@ -429,8 +435,9 @@ Both answer the same question, which is the thesis of the whole company: **trade
 
 ## 11. Open questions
 
+- **Does a Pyth read at 16:00 equal the official close?** Unverified, and the most important thing on this list. The official close comes from the closing auction at 16:00:00, which prints seconds to minutes later, so a read at exactly 16:00:00 catches the continuous market just before it. Since strikes are calibrated on official closes, settling on anything else means calibrating against one definition and settling against another, which is what 4.1 warns about. Being measured against the live feed before settlement logic is frozen. See `ROADMAP.md`, Phase 3.
 - **Fee level.** 1% of the pot is the placeholder. Needs a decision before mainnet, not before the hackathon.
 - **Rung promotion threshold.** The scaling rule in 5.4 says rungs are added once pools are deep enough, but the actual dollar threshold is unset. Needs real usage data.
 - **Minimum viable pot.** Below some pool size the ratios get silly. Consider a floor under which the market voids at lock.
 - **Lookback window.** 20 sessions is the standard choice, but shorter windows react faster to regime changes. EWMA (RiskMetrics, lambda 0.94) is the natural upgrade, at the cost of losing the "count the numbers yourself" verifiability that makes percentiles so easy to defend.
-- **Percentile interpolation.** With 20 samples, P25 and P75 fall between observations. We use linear interpolation; the exact convention must be pinned down in the keeper so results are reproducible.
+- ~~**Percentile interpolation.**~~ Resolved. With 20 samples P25 and P75 fall between observations, so the keeper interpolates linearly between the two neighbours. Picking the nearer observation instead would bias P50 to one side of the distribution, which is the one rung that has to be a genuine coin flip. The convention is pinned by tests against the published NVDA series.

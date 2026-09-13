@@ -87,7 +87,7 @@ Both oracle reads land at 16:00 ET, a live market moment, so staleness handling 
 |---|---|---|---|
 | NVDA | 0.89% | 1.55% | 2.35% |
 | TSLA | 0.71% | 1.71% | 4.04% |
-| SPY | 0.30% | 0.45% | 0.66% |
+| SPY | 0.30% | 0.45% | 0.67% |
 
 These drift daily as the window rolls. The current window is a relatively quiet stretch for NVDA.
 
@@ -250,7 +250,23 @@ Cron cannot express market holidays, so the Lambda checks whether today is a tra
 | Fly, Railway, Render | Around $5/month to keep something running that does not need to be running |
 | Local machine | Dies when the laptop closes. Judges may test at 3am on a Sunday |
 
-**Open question for this phase:** how long do Pyth equity publishers keep sending after 16:00 ET? If after-hours prices continue to arrive, reading late would capture a post-close price rather than the close itself. This determines our staleness tolerance and must be measured against the live feed, not assumed.
+### Blocker: does a Pyth read at 16:00 equal the official close?
+
+**This must be measured before settlement logic is finalised. It is not a staleness detail, it is a definitional one.**
+
+The official close of a US equity comes from the **closing auction** (NASDAQ Closing Cross, NYSE Closing Auction), which runs at 16:00:00 and prints within seconds to a couple of minutes. It is the highest-volume moment of the session. A Pyth read at exactly 16:00:00 reflects the continuous market immediately *before* that auction, not the auction print. Read later instead and you drift into after-hours.
+
+Why this is the same bug as open-to-close, one level down: the strike is calibrated on **official closes** from Yahoo. Settling on "Pyth at 16:00" would mean calibrating against one definition and settling against another, which is exactly what `PROJECT.en.md` §4.1 names as the thing that silently misprices every rung.
+
+What partially contains it: the product measures `|settlement - reference| / reference`, and both reads use the same method at the same instant. The error is therefore a bounded definitional bias, not random noise. The bound is however much the closing auction moves the price, which is usually small and occasionally is not.
+
+**Unknown, and not to be assumed:** whether Pyth equity feeds carry the official auction print at all, and with what delay. Nobody on this project has verified it.
+
+**Measurement, Monday:** read Pyth for NVDA, TSLA and SPY at 16:00:00, 16:01 and 16:05, and diff each against the official close. Strikes run 30 to 404 bps. If the gap sits at a few bps it gets documented and we move on. If it does not, the settlement instant moves.
+
+**The long-term fix, out of scope this week:** calibrate from the same series we settle on, by recording the Pyth close daily and building our own history. Definitionally airtight, and it needs 20 sessions we do not have.
+
+The standard here is not zero error. It is knowing the number and publishing it. "We settle on Pyth at 16:00:00 ET, which differs from the official close by a median of X bps over these sessions" survives a judge's question. "We use the close" does not, if nobody checked.
 
 ### Tasks
 

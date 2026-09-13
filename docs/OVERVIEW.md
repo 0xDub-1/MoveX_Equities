@@ -190,7 +190,7 @@ Three thresholds carve the day into four outcomes, each historically just as lik
 
 Four equal boxes at the open, which the money then distorts as the day approaches. The gap between what history says and what the crowd is paying is, in itself, the signal.
 
-And because these are three independent markets rather than four sealed boxes, you can combine them. If your view is *"normal day, neither dead nor crazy"*, you back ABOVE on TIGHT and BELOW on WIDE and you have built that range yourself. If the day comes in at 3.8% instead of 3.6%, you win one leg and lose the other rather than being wiped out by two tenths of a percent.
+And because these are three independent markets rather than four sealed boxes, you can combine them. If your view is *"normal day, neither dead nor crazy"*, you back ABOVE on TIGHT and BELOW on WIDE and you have built that range yourself. If the day comes in at 2.4% instead of 2.3%, you win one leg and lose the other rather than being wiped out by five hundredths of a percent.
 
 ---
 
