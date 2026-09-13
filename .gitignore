@@ -1,2 +1,5 @@
 # Key material. Never committed, and the repo is public.
 .keys/
+
+# Devnet deployment record. Holds test-wallet secret keys.
+program/scripts/devnet.json
