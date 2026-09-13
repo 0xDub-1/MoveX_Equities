@@ -15,6 +15,7 @@
 mod common;
 use common::*;
 
+use anchor_lang::prelude::Pubkey;
 use movex_equities::state::{MarketState, Side};
 use solana_signer::Signer;
 
@@ -338,6 +339,129 @@ fn the_crank_respects_its_schedule() {
         settle(&mut ctx).is_err(),
         "a settled market must not be re-settled at a different price"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Protocol fee
+// ---------------------------------------------------------------------------
+
+/// Runs a market to settlement with ABOVE winning, and returns the two
+/// depositors so a test can carry on from there.
+fn settled_market(ctx: &mut Ctx) -> ((solana_keypair::Keypair, Pubkey), (solana_keypair::Keypair, Pubkey)) {
+    let params = default_params(ctx);
+    let (lock_ts, settle_ts) = (params.lock_ts, params.settle_ts);
+    init_market(ctx, params).unwrap();
+
+    let (alice, alice_ata) = funded_wallet(ctx, 1_000 * USDC);
+    let (bob, bob_ata) = funded_wallet(ctx, 1_000 * USDC);
+    deposit(ctx, &alice, &alice_ata, Side::Above, ABOVE_STAKE).unwrap();
+    deposit(ctx, &bob, &bob_ata, Side::Below, BELOW_STAKE).unwrap();
+
+    warp_to(&mut ctx.svm, lock_ts);
+    set_mock_price(ctx, REFERENCE_PRICE, None).unwrap();
+    lock(ctx).unwrap();
+
+    warp_to(&mut ctx.svm, settle_ts);
+    set_mock_price(ctx, 21_390, None).unwrap();
+    settle(ctx).unwrap();
+
+    ((alice, alice_ata), (bob, bob_ata))
+}
+
+#[test]
+fn the_fee_reaches_the_treasury() {
+    let mut ctx = setup();
+    let ((alice, alice_ata), _) = settled_market(&mut ctx);
+
+    assert_eq!(token_balance(&ctx.svm, &ctx.treasury_ata), 0);
+
+    collect_fee(&mut ctx).expect("collect");
+
+    // 1% of a 400 USDC pot.
+    assert_eq!(token_balance(&ctx.svm, &ctx.treasury_ata), 4 * USDC);
+    assert!(market_state(&ctx.svm, &ctx.market).fee_collected);
+
+    // And the winner is still made whole afterwards.
+    let before = token_balance(&ctx.svm, &alice_ata);
+    claim(&mut ctx, &alice, &alice_ata).expect("alice still claims");
+    assert_eq!(token_balance(&ctx.svm, &alice_ata) - before, 396 * USDC);
+
+    // Vault fully drained: nothing stranded, nothing short.
+    assert_eq!(token_balance(&ctx.svm, &ctx.vault), 0);
+}
+
+#[test]
+fn the_fee_can_only_be_taken_once() {
+    let mut ctx = setup();
+    settled_market(&mut ctx);
+
+    collect_fee(&mut ctx).unwrap();
+    assert!(
+        collect_fee(&mut ctx).is_err(),
+        "the fee is a single withdrawal, not a faucet"
+    );
+    assert_eq!(token_balance(&ctx.svm, &ctx.treasury_ata), 4 * USDC);
+}
+
+#[test]
+fn collecting_after_claims_works_the_same() {
+    let mut ctx = setup();
+    let ((alice, alice_ata), _) = settled_market(&mut ctx);
+
+    claim(&mut ctx, &alice, &alice_ata).unwrap();
+    assert_eq!(token_balance(&ctx.svm, &ctx.vault), 4 * USDC);
+
+    collect_fee(&mut ctx).expect("order does not matter");
+    assert_eq!(token_balance(&ctx.svm, &ctx.treasury_ata), 4 * USDC);
+    assert_eq!(token_balance(&ctx.svm, &ctx.vault), 0);
+}
+
+#[test]
+fn a_voided_market_yields_no_fee() {
+    let mut ctx = setup();
+    let params = default_params(&ctx);
+    let lock_ts = params.lock_ts;
+    init_market(&mut ctx, params).unwrap();
+
+    // Only one side shows up, so the market voids at lock.
+    let (alice, alice_ata) = funded_wallet(&mut ctx, 1_000 * USDC);
+    deposit(&mut ctx, &alice, &alice_ata, Side::Above, ABOVE_STAKE).unwrap();
+    warp_to(&mut ctx.svm, lock_ts);
+    set_mock_price(&mut ctx, REFERENCE_PRICE, None).unwrap();
+    lock(&mut ctx).unwrap();
+
+    assert!(
+        collect_fee(&mut ctx).is_err(),
+        "a market that did not resolve has not earned a fee"
+    );
+    assert_eq!(token_balance(&ctx.svm, &ctx.treasury_ata), 0);
+
+    // And the depositor still gets every unit back.
+    claim(&mut ctx, &alice, &alice_ata).unwrap();
+    assert_eq!(token_balance(&ctx.svm, &alice_ata), 1_000 * USDC);
+    assert_eq!(token_balance(&ctx.svm, &ctx.vault), 0);
+}
+
+#[test]
+fn the_fee_cannot_be_taken_before_settlement() {
+    let mut ctx = setup();
+    let params = default_params(&ctx);
+    let lock_ts = params.lock_ts;
+    init_market(&mut ctx, params).unwrap();
+
+    let (alice, alice_ata) = funded_wallet(&mut ctx, 1_000 * USDC);
+    let (bob, bob_ata) = funded_wallet(&mut ctx, 1_000 * USDC);
+    deposit(&mut ctx, &alice, &alice_ata, Side::Above, ABOVE_STAKE).unwrap();
+    deposit(&mut ctx, &bob, &bob_ata, Side::Below, BELOW_STAKE).unwrap();
+
+    assert!(collect_fee(&mut ctx).is_err(), "market is Open");
+
+    warp_to(&mut ctx.svm, lock_ts);
+    set_mock_price(&mut ctx, REFERENCE_PRICE, None).unwrap();
+    lock(&mut ctx).unwrap();
+
+    assert!(collect_fee(&mut ctx).is_err(), "market is Locked");
+    assert_eq!(token_balance(&ctx.svm, &ctx.treasury_ata), 0);
 }
 
 #[test]

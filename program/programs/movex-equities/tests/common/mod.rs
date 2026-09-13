@@ -52,6 +52,9 @@ pub struct Ctx {
     pub vault: Pubkey,
     /// The mock price account this market settles against.
     pub price_feed: Pubkey,
+    /// Wallet entitled to the protocol fee, and its token account.
+    pub treasury: Keypair,
+    pub treasury_ata: Pubkey,
 }
 
 pub fn send(
@@ -131,38 +134,43 @@ fn create_mint(svm: &mut LiteSVM, payer: &Keypair) -> Pubkey {
     mint.pubkey()
 }
 
+/// An empty token account for `owner`, paid for by `payer`.
+fn create_token_account(
+    svm: &mut LiteSVM,
+    payer: &Keypair,
+    mint: &Pubkey,
+    owner: &Pubkey,
+) -> Pubkey {
+    let ata = Keypair::new();
+    let rent = svm.minimum_balance_for_rent_exemption(spl_token::state::Account::LEN);
+    let ixs = [
+        system_instruction::create_account(
+            &payer.pubkey(),
+            &ata.pubkey(),
+            rent,
+            spl_token::state::Account::LEN as u64,
+            &spl_token::ID,
+        ),
+        spl_token::instruction::initialize_account3(&spl_token::ID, &ata.pubkey(), mint, owner)
+            .unwrap(),
+    ];
+    send(svm, payer, &ixs, &[payer, &ata]).expect("create token account");
+    ata.pubkey()
+}
+
 /// A funded wallet with a token account holding `amount`.
 pub fn funded_wallet(ctx: &mut Ctx, amount: u64) -> (Keypair, Pubkey) {
     let admin = ctx.admin.insecure_clone();
     let user = Keypair::new();
     ctx.svm.airdrop(&user.pubkey(), 10 * 1_000_000_000).unwrap();
 
-    let ata = Keypair::new();
-    let rent = ctx
-        .svm
-        .minimum_balance_for_rent_exemption(spl_token::state::Account::LEN);
-    let ixs = [
-        system_instruction::create_account(
-            &user.pubkey(),
-            &ata.pubkey(),
-            rent,
-            spl_token::state::Account::LEN as u64,
-            &spl_token::ID,
-        ),
-        spl_token::instruction::initialize_account3(
-            &spl_token::ID,
-            &ata.pubkey(),
-            &ctx.mint,
-            &user.pubkey(),
-        )
-        .unwrap(),
-    ];
-    send(&mut ctx.svm, &user, &ixs, &[&user, &ata]).expect("create token account");
+    let mint = ctx.mint;
+    let ata = create_token_account(&mut ctx.svm, &user, &mint, &user.pubkey());
 
     let mint_to = spl_token::instruction::mint_to(
         &spl_token::ID,
-        &ctx.mint,
-        &ata.pubkey(),
+        &mint,
+        &ata,
         &admin.pubkey(),
         &[],
         amount,
@@ -170,7 +178,7 @@ pub fn funded_wallet(ctx: &mut Ctx, amount: u64) -> (Keypair, Pubkey) {
     .unwrap();
     send(&mut ctx.svm, &admin, &[mint_to], &[&admin]).expect("mint to user");
 
-    (user, ata.pubkey())
+    (user, ata)
 }
 
 pub fn setup() -> Ctx {
@@ -195,6 +203,10 @@ pub fn setup() -> Ctx {
     let (vault, _) = Pubkey::find_program_address(&[b"vault", market.as_ref()], &program_id);
     let (price_feed, _) = Pubkey::find_program_address(&[b"mock_price", TICKER], &program_id);
 
+    let treasury = Keypair::new();
+    svm.airdrop(&treasury.pubkey(), 1_000_000_000).unwrap();
+    let treasury_ata = create_token_account(&mut svm, &admin, &mint, &treasury.pubkey());
+
     Ctx {
         svm,
         program_id,
@@ -203,6 +215,8 @@ pub fn setup() -> Ctx {
         market,
         vault,
         price_feed,
+        treasury,
+        treasury_ata,
     }
 }
 
@@ -215,9 +229,30 @@ pub fn default_params(ctx: &Ctx) -> InitMarketParams {
         strike_bps: NVDA_FAIR_STRIKE,
         samples_bps: NVDA_SAMPLES,
         fee_bps: 100,
+        treasury: ctx.treasury.pubkey(),
         lock_ts: t + 3_600,
         settle_ts: t + 90_000,
     }
+}
+
+pub fn collect_fee(ctx: &mut Ctx) -> Result<(), String> {
+    let cranker = Keypair::new();
+    ctx.svm.airdrop(&cranker.pubkey(), 1_000_000_000).unwrap();
+
+    let ix = Instruction::new_with_bytes(
+        ctx.program_id,
+        &movex_equities::instruction::CollectFee {}.data(),
+        movex_equities::accounts::CollectFee {
+            cranker: cranker.pubkey(),
+            market: ctx.market,
+            vault: ctx.vault,
+            treasury_token_account: ctx.treasury_ata,
+            quote_mint: ctx.mint,
+            token_program: spl_token::ID,
+        }
+        .to_account_metas(None),
+    );
+    send(&mut ctx.svm, &cranker, &[ix], &[&cranker])
 }
 
 pub fn position_pda(ctx: &Ctx, user: &Pubkey) -> Pubkey {

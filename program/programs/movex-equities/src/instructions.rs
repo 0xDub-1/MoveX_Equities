@@ -1,4 +1,5 @@
 pub mod claim;
+pub mod collect_fee;
 pub mod deposit;
 pub mod init_market;
 pub mod lock;
@@ -10,6 +11,7 @@ pub mod withdraw;
 pub mod set_mock_price;
 
 pub use claim::*;
+pub use collect_fee::*;
 pub use deposit::*;
 pub use init_market::*;
 pub use lock::*;

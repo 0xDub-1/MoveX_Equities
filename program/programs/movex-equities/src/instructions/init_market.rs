@@ -19,6 +19,8 @@ pub struct InitMarketParams {
     /// The 20 close-to-close moves the strike was read from, sorted ascending.
     pub samples_bps: [u16; 20],
     pub fee_bps: u16,
+    /// Wallet entitled to the fee on this market.
+    pub treasury: Pubkey,
     pub lock_ts: i64,
     pub settle_ts: i64,
 }
@@ -102,6 +104,8 @@ pub fn handle_init_market(ctx: Context<InitMarket>, params: InitMarketParams) ->
     market.below_pool = 0;
     market.winning_side = None;
     market.fee_bps = params.fee_bps;
+    market.treasury = params.treasury;
+    market.fee_collected = false;
     market.lock_ts = params.lock_ts;
     market.settle_ts = params.settle_ts;
     market.bump = ctx.bumps.market;

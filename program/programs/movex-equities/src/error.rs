@@ -60,4 +60,6 @@ pub enum ErrorCode {
     NotOnWinningSide,
     #[msg("There is nothing to claim")]
     NothingToClaim,
+    #[msg("The protocol fee has already been collected")]
+    FeeAlreadyCollected,
 }

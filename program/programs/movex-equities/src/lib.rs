@@ -74,6 +74,11 @@ pub mod movex_equities {
         crate::instructions::void_market::handle_void_market(ctx)
     }
 
+    /// Pushes a settled market's protocol fee to its treasury.
+    pub fn collect_fee(ctx: Context<CollectFee>) -> Result<()> {
+        crate::instructions::collect_fee::handle_collect_fee(ctx)
+    }
+
     /// Development only, compiled out without `dev-oracle`.
     #[cfg(feature = "dev-oracle")]
     pub fn set_mock_price(

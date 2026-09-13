@@ -93,6 +93,12 @@ pub struct Market {
     /// Written at settle.
     pub winning_side: Option<Side>,
     pub fee_bps: u16,
+    /// Wallet entitled to the protocol fee. The destination token account
+    /// must be owned by it, so the fee has a declared home from the moment
+    /// the market is created rather than being decided later.
+    pub treasury: Pubkey,
+    /// The fee is a single withdrawal, not a running balance.
+    pub fee_collected: bool,
     /// Deposits close at this time and the reference price is taken.
     pub lock_ts: i64,
     /// The settlement price is taken at this time.
