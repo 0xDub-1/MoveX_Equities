@@ -19,7 +19,12 @@ import {
 import type { PriceHistoryProvider } from "./providers/types";
 import { todayEastern } from "./providers/yahoo";
 import { takeWindow, toCloseToCloseMoves, validateWindow } from "./sessions";
-import { computeLadder, round2, toBps } from "./strikes";
+import { assertSorted, bpsToPct, ladderBps, toBps } from "./strikes";
+
+/** Two decimal places, for prices. Strike maths never goes near this. */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
 
 /** One session as it appears in the report, for the UI's transparency panel. */
 export interface ReportedSession {
@@ -37,6 +42,13 @@ export interface TickerStrikes {
    * "here are the twenty numbers it came from".
    */
   readonly samples: number[];
+  /**
+   * The same series in basis points, which is what `init_market` receives.
+   *
+   * These integers are canonical. `samples` above is a display projection of
+   * them, so what the UI shows and what the program verifies can never drift.
+   */
+  readonly samplesBps: number[];
   readonly strikes: Record<Rung, number>;
   /** Same thresholds in basis points, which is what the program stores. */
   readonly strikesBps: Record<Rung, number>;
@@ -136,22 +148,32 @@ async function calibrate(
   const window = takeWindow(toCloseToCloseMoves(bars), lookback);
   const warnings = validateWindow(cfg.symbol, window, lookback);
 
-  const movesPct = window.map((m) => m.movePct);
-  const strikes = computeLadder(movesPct);
+  // Basis points first, and everything else derived from them. Rounding each
+  // move to an integer before sorting is what lets the program reproduce this
+  // exactly: it receives these same integers and recomputes the percentile
+  // itself.
+  const samplesBps = window.map((m) => toBps(m.movePct)).sort((a, b) => a - b);
+  assertSorted(samplesBps);
+
+  const strikesBps = ladderBps(samplesBps);
 
   return {
-    samples: [...movesPct].sort((a, b) => a - b).map(round2),
-    strikes,
-    strikesBps: {
-      tight: toBps(strikes.tight),
-      fair: toBps(strikes.fair),
-      wide: toBps(strikes.wide),
+    samples: samplesBps.map(bpsToPct),
+    samplesBps,
+    strikes: {
+      tight: bpsToPct(strikesBps.tight),
+      fair: bpsToPct(strikesBps.fair),
+      wide: bpsToPct(strikesBps.wide),
     },
+    strikesBps,
     rungs: cfg.rungs,
     sessions: window.map((m) => ({
       date: m.date,
       close: round2(m.close),
-      movePct: round2(m.movePct),
+      // Projected through bps so a session's move always matches its entry
+      // in the sorted series. Rounding the float separately could show 0.89
+      // in one place and 0.88 in the other.
+      movePct: bpsToPct(toBps(m.movePct)),
     })),
     window: {
       from: window[0].date,

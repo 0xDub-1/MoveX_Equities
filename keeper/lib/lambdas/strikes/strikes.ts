@@ -2,32 +2,68 @@
 // Strike ladder
 // =============================================================================
 //
-// The percentile maths, isolated and pure so it can be tested against
-// hand-computed numbers without touching the network.
+// Basis points are the canonical representation, and the only one the maths
+// runs on. Percent is a display projection derived from bps, never the other
+// way round.
+//
+// This is deliberate. The on-chain program recomputes the same percentile
+// from the same integer samples and rejects a market whose strike does not
+// match. If this file computed in floating point and rounded at the end, the
+// two could disagree by a basis point and a perfectly correct market would be
+// refused. One definition, expressed identically in both languages.
+//
+// The Rust side lives in program/programs/movex-equities/src/strike.rs and
+// carries the same weights table.
 
-import { RUNG_PERCENTILES, type Rung } from "./config";
+import { type Rung } from "./config";
 
 /**
- * Linear-interpolated percentile over an ascending array.
+ * Interpolation weights for each rung over a 20-element sorted series.
  *
- * Interpolating rather than picking a nearest element matters at n=20:
- * P50 lands between the 10th and 11th values, and rounding to one of them
- * would bias the "coin flip" rung to one side of the distribution.
+ * A percentile at `idx = p * (n - 1)` sits between `s[lo]` and `s[lo + 1]`:
+ *
+ *   value = s[lo] * (1 - frac) + s[lo + 1] * frac
+ *
+ *   P25 -> idx = 0.25 * 19 =  4.75  -> lo =  4, frac = 0.75
+ *   P50 -> idx = 0.50 * 19 =  9.50  -> lo =  9, frac = 0.50
+ *   P75 -> idx = 0.75 * 19 = 14.25  -> lo = 14, frac = 0.25
+ *
+ * Every fraction lands on a clean quarter, so the weights are exact
+ * hundredths and the whole computation stays in integers.
  */
-export function percentile(sortedAsc: readonly number[], p: number): number {
-  if (sortedAsc.length === 0) {
-    throw new Error("percentile of an empty series");
-  }
-  if (p < 0 || p > 1) {
-    throw new Error(`percentile p must be in [0, 1], got ${p}`);
+const RUNG_WEIGHTS: Record<Rung, { lo: number; wLo: number; wHi: number }> = {
+  tight: { lo: 4, wLo: 25, wHi: 75 },
+  fair: { lo: 9, wLo: 50, wHi: 50 },
+  wide: { lo: 14, wLo: 75, wHi: 25 },
+};
+
+/** Absolute move in percent to integer basis points. 1.55 -> 155. */
+export function toBps(pct: number): number {
+  return Math.round(pct * 100);
+}
+
+/** Basis points back to percent, for display only. 155 -> 1.55. */
+export function bpsToPct(bps: number): number {
+  return bps / 100;
+}
+
+/**
+ * The strike a sorted series implies for one rung, in basis points.
+ *
+ * Interpolating rather than snapping to the nearer observation matters at
+ * n = 20: P50 falls exactly between the 10th and 11th values, and rounding to
+ * one of them would tilt the one rung that has to be a genuine coin flip.
+ */
+export function percentileBps(sortedAscBps: readonly number[], rung: Rung): number {
+  if (sortedAscBps.length !== 20) {
+    throw new Error(`percentileBps expects 20 samples, got ${sortedAscBps.length}`);
   }
 
-  const idx = p * (sortedAsc.length - 1);
-  const lo = Math.floor(idx);
-  const hi = Math.ceil(idx);
+  const { lo, wLo, wHi } = RUNG_WEIGHTS[rung];
+  const weighted = sortedAscBps[lo] * wLo + sortedAscBps[lo + 1] * wHi;
 
-  if (lo === hi) return sortedAsc[lo];
-  return sortedAsc[lo] + (idx - lo) * (sortedAsc[hi] - sortedAsc[lo]);
+  // Round half up, matching the Rust side exactly.
+  return Math.floor((weighted + 50) / 100);
 }
 
 /**
@@ -36,29 +72,24 @@ export function percentile(sortedAsc: readonly number[], p: number): number {
  * moves and read off the quarter, half and three-quarter marks.
  *
  * The median is what makes this robust. One violent session lands at the
- * right edge of the sorted list and cannot drag the middle around, where an
- * average would have been pulled with it.
+ * right edge of the sorted list and cannot drag the middle, where an average
+ * would have been pulled with it.
  */
-export function computeLadder(movesPct: readonly number[]): Record<Rung, number> {
-  const sorted = [...movesPct].sort((a, b) => a - b);
-
+export function ladderBps(sortedAscBps: readonly number[]): Record<Rung, number> {
   return {
-    tight: round2(percentile(sorted, RUNG_PERCENTILES.tight)),
-    fair: round2(percentile(sorted, RUNG_PERCENTILES.fair)),
-    wide: round2(percentile(sorted, RUNG_PERCENTILES.wide)),
+    tight: percentileBps(sortedAscBps, "tight"),
+    fair: percentileBps(sortedAscBps, "fair"),
+    wide: percentileBps(sortedAscBps, "wide"),
   };
 }
 
-/**
- * Percent to basis points, which is how the on-chain program stores a
- * threshold. Integers only: comparing a settled move against a float
- * strike on-chain would be a rounding argument waiting to happen.
- */
-export function toBps(pct: number): number {
-  return Math.round(pct * 100);
-}
-
-/** Two decimal places, which is the precision a threshold is quoted at. */
-export function round2(n: number): number {
-  return Math.round(n * 100) / 100;
+/** Rejects a series the percentile would silently misread. */
+export function assertSorted(samplesBps: readonly number[]): void {
+  for (let i = 1; i < samplesBps.length; i++) {
+    if (samplesBps[i] < samplesBps[i - 1]) {
+      throw new Error(
+        `sample series is not sorted ascending at index ${i}: ${samplesBps[i - 1]} then ${samplesBps[i]}`,
+      );
+    }
+  }
 }
