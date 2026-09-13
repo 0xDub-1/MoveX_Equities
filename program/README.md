@@ -6,9 +6,19 @@ market, no order book, no leverage, no liquidations.
 ## Build
 
 ```bash
-anchor build --arch v0
-cargo test
+# production shape: no mock oracle, no faucet
+anchor build --arch v0 && cargo test
+
+# devnet shape: everything
+anchor build --arch v0 -- --features dev-oracle,devnet-faucet
+cargo test --features dev-oracle,devnet-faucet
 ```
+
+Both shapes are kept green. The production one is the check that matters:
+it proves the shipped binary contains no instruction that can write a price
+or mint the quote asset. Features, not runtime flags, because a runtime
+switch is one bad admin transaction away from settling real money against a
+number somebody typed in.
 
 **`--arch v0` is not optional.** Anchor 1.2 defaults to `--arch v3`, and
 litesvm 0.10's verifier rejects SBPF v3: the tests fail at `add_program` with
@@ -70,10 +80,34 @@ One position per user per market, so a user holds a side rather than both.
 Once a full withdrawal takes the balance to zero the side is free again,
 which keeps "withdraw and change my mind" working.
 
+## Denomination
+
+Markets are quoted in whatever SPL mint `init_market` is given. On devnet
+that is USDX, a valueless test token with a self-serve faucet: 10,000 per
+claim, 24 hour cooldown, mint authority held by a program PDA so
+`faucet_mint` is the only path to supply.
+
+A faucet of our own rather than a dependency on an external one. Judges may
+test at 3am on a Sunday, and a dry third-party faucet at that hour means
+nobody can trade at all.
+
+Choosing a dollar-denominated token costs no optionality. `quote_mint` is a
+field, and wSOL is an SPL token, so SOL-denominated markets later need no
+program change. It also keeps the product legible: pools denominated in a
+volatile asset would hand a user betting on NVDA volatility an unrelated
+SOL/USD exposure for the duration.
+
 ## Status
 
-Phase 1 is complete: `init_market`, `deposit`, `withdraw`, and the tests that
-pin them.
+Phases 1 and 2 are complete, 53 tests:
 
-`lock`, `settle` and `claim` are Phase 2, behind a mock oracle first so the
-full lifecycle is testable in seconds without waiting on market hours.
+| | |
+|---|---|
+| `init_market` `deposit` `withdraw` | market creation and the deposit path |
+| `lock` `settle` `claim` | the full lifecycle, behind a mock oracle |
+| `void_market` | releases a market whose feed never recovered |
+| `collect_fee` | pushes a settled market's fee to its treasury |
+| `init_faucet` `faucet_mint` | devnet test token |
+
+Phase 3 replaces the mock oracle with Pyth, adds staleness and
+confidence-interval checks, and deploys to devnet.

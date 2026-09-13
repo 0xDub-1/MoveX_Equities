@@ -18,6 +18,9 @@ name = "movex_equities"
 #   cargo test --features dev-oracle
 default = []
 dev-oracle = []
+# Self-serve test-token faucet. Devnet only, for the same reason: a
+# production build must have no instruction that can mint the quote asset.
+devnet-faucet = []
 cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-log-ix-name = []

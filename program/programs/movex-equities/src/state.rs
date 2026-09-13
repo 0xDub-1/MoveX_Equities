@@ -128,6 +128,34 @@ pub struct MockPrice {
     pub bump: u8,
 }
 
+/// Configuration for a self-serve test-token faucet.
+///
+/// The PDA itself is the mint authority, so the only way to create supply is
+/// through `faucet_mint` and its cooldown. Gated on `devnet-faucet`: a
+/// production build has no instruction that can mint the quote asset.
+#[cfg(feature = "devnet-faucet")]
+#[account]
+#[derive(InitSpace)]
+pub struct Faucet {
+    pub mint: Pubkey,
+    pub authority: Pubkey,
+    pub amount_per_claim: u64,
+    pub cooldown_secs: i64,
+    pub bump: u8,
+}
+
+/// One user's claim history against one faucet.
+#[cfg(feature = "devnet-faucet")]
+#[account]
+#[derive(InitSpace)]
+pub struct FaucetClaim {
+    pub faucet: Pubkey,
+    pub user: Pubkey,
+    pub last_claim_ts: i64,
+    pub total_claimed: u64,
+    pub bump: u8,
+}
+
 #[account]
 #[derive(InitSpace)]
 pub struct Position {

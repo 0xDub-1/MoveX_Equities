@@ -62,4 +62,10 @@ pub enum ErrorCode {
     NothingToClaim,
     #[msg("The protocol fee has already been collected")]
     FeeAlreadyCollected,
+
+    // -- faucet -------------------------------------------------------------
+    #[msg("Faucet cooldown has not elapsed yet")]
+    FaucetCooldownActive,
+    #[msg("Faucet claim amount is outside the allowed range")]
+    FaucetAmountInvalid,
 }

@@ -10,6 +10,9 @@ pub mod withdraw;
 #[cfg(feature = "dev-oracle")]
 pub mod set_mock_price;
 
+#[cfg(feature = "devnet-faucet")]
+pub mod faucet;
+
 pub use claim::*;
 pub use collect_fee::*;
 pub use deposit::*;
@@ -21,3 +24,6 @@ pub use withdraw::*;
 
 #[cfg(feature = "dev-oracle")]
 pub use set_mock_price::*;
+
+#[cfg(feature = "devnet-faucet")]
+pub use faucet::*;

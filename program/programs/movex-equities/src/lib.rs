@@ -79,6 +79,22 @@ pub mod movex_equities {
         crate::instructions::collect_fee::handle_collect_fee(ctx)
     }
 
+    /// Opens a test-token faucet. Compiled out without `devnet-faucet`.
+    #[cfg(feature = "devnet-faucet")]
+    pub fn init_faucet(
+        ctx: Context<InitFaucet>,
+        amount_per_claim: u64,
+        cooldown_secs: i64,
+    ) -> Result<()> {
+        crate::instructions::faucet::handle_init_faucet(ctx, amount_per_claim, cooldown_secs)
+    }
+
+    /// Mints one allowance of the test token, subject to the cooldown.
+    #[cfg(feature = "devnet-faucet")]
+    pub fn faucet_mint(ctx: Context<FaucetMint>) -> Result<()> {
+        crate::instructions::faucet::handle_faucet_mint(ctx)
+    }
+
     /// Development only, compiled out without `dev-oracle`.
     #[cfg(feature = "dev-oracle")]
     pub fn set_mock_price(

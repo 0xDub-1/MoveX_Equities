@@ -13,6 +13,22 @@ pub const VAULT_SEED: &[u8] = b"vault";
 #[constant]
 pub const MOCK_PRICE_SEED: &[u8] = b"mock_price";
 
+#[cfg(feature = "devnet-faucet")]
+#[constant]
+pub const FAUCET_SEED: &[u8] = b"faucet";
+
+#[cfg(feature = "devnet-faucet")]
+#[constant]
+pub const FAUCET_CLAIM_SEED: &[u8] = b"faucet_claim";
+
+/// Upper bound on a single faucet claim, in USDX base units.
+///
+/// A bound rather than the amount itself. The per-faucet figure is set at
+/// creation; this stops a fat-fingered `init_faucet` from handing out a
+/// number that makes every pool ratio meaningless.
+#[cfg(feature = "devnet-faucet")]
+pub const MAX_FAUCET_CLAIM: u64 = 100_000_000_000;
+
 /// Sessions the strike ladder is calibrated on. Fixed, because the on-chain
 /// percentile check indexes into the series at hardcoded positions.
 pub const LOOKBACK_SESSIONS: usize = 20;
