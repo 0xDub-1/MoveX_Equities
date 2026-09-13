@@ -9,9 +9,15 @@ pub const POSITION_SEED: &[u8] = b"position";
 #[constant]
 pub const VAULT_SEED: &[u8] = b"vault";
 
-#[cfg(feature = "dev-oracle")]
+#[cfg(feature = "keeper-oracle")]
 #[constant]
-pub const MOCK_PRICE_SEED: &[u8] = b"mock_price";
+pub const PRICE_FEED_SEED: &[u8] = b"price_feed";
+
+/// Fixed scale for keeper-published prices, matching the exponent Pyth
+/// readings are normalised to. One scale across both oracle implementations
+/// means nothing downstream has to know which one it is talking to.
+#[cfg(feature = "keeper-oracle")]
+pub const KEEPER_PRICE_EXPONENT: i32 = -8;
 
 #[cfg(feature = "devnet-faucet")]
 #[constant]

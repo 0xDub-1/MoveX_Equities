@@ -7,8 +7,8 @@ pub mod settle;
 pub mod void_market;
 pub mod withdraw;
 
-#[cfg(feature = "dev-oracle")]
-pub mod set_mock_price;
+#[cfg(feature = "keeper-oracle")]
+pub mod price_feed;
 
 #[cfg(feature = "devnet-faucet")]
 pub mod faucet;
@@ -22,8 +22,8 @@ pub use settle::*;
 pub use void_market::*;
 pub use withdraw::*;
 
-#[cfg(feature = "dev-oracle")]
-pub use set_mock_price::*;
+#[cfg(feature = "keeper-oracle")]
+pub use price_feed::*;
 
 #[cfg(feature = "devnet-faucet")]
 pub use faucet::*;

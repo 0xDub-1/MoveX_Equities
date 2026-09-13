@@ -63,18 +63,31 @@ pub fn read_price(feed: &AccountInfo, now: i64) -> Result<PriceReading> {
     Ok(reading)
 }
 
-#[cfg(feature = "dev-oracle")]
+#[cfg(feature = "keeper-oracle")]
 fn read_price_inner(feed: &AccountInfo) -> Result<PriceReading> {
-    use crate::state::MockPrice;
+    use crate::state::PriceFeed;
 
     let data = feed.try_borrow_data()?;
     let mut slice: &[u8] = &data;
-    let mock = MockPrice::try_deserialize(&mut slice)
+    let published = PriceFeed::try_deserialize(&mut slice)
         .map_err(|_| error!(ErrorCode::OracleAccountInvalid))?;
 
+    // The same confidence bound the Pyth path applies. `update_price`
+    // enforces it on write too; repeating it on read means a feed whose
+    // bound was later loosened cannot settle a market that was created
+    // under the stricter one.
+    let max_conf = published
+        .price
+        .checked_div(MAX_CONFIDENCE_RATIO)
+        .ok_or(ErrorCode::MathOverflow)?;
+    require!(
+        published.conf <= max_conf,
+        ErrorCode::OracleConfidenceTooWide
+    );
+
     Ok(PriceReading {
-        price: mock.price,
-        publish_time: mock.publish_time,
+        price: published.price,
+        publish_time: published.publish_time,
     })
 }
 
@@ -86,10 +99,10 @@ fn read_price_inner(feed: &AccountInfo) -> Result<PriceReading> {
 /// would produce a move that is wrong by a factor of ten, silently. So both
 /// are converted to a fixed scale on the way in and the rest of the program
 /// never sees an exponent at all.
-#[cfg(not(feature = "dev-oracle"))]
+#[cfg(not(feature = "keeper-oracle"))]
 pub const TARGET_EXPONENT: i32 = -8;
 
-#[cfg(not(feature = "dev-oracle"))]
+#[cfg(not(feature = "keeper-oracle"))]
 fn read_price_inner(feed: &AccountInfo) -> Result<PriceReading> {
     use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 
@@ -120,7 +133,7 @@ fn read_price_inner(feed: &AccountInfo) -> Result<PriceReading> {
 }
 
 /// Rescales a Pyth price to `TARGET_EXPONENT`.
-#[cfg(not(feature = "dev-oracle"))]
+#[cfg(not(feature = "keeper-oracle"))]
 fn normalize(price: i64, exponent: i32) -> Result<u64> {
     let shift = exponent
         .checked_sub(TARGET_EXPONENT)

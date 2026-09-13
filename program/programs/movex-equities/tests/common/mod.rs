@@ -2,7 +2,8 @@
 //!
 //! litesvm runs the SVM in process, so a market can be driven from creation
 //! to claim in a fraction of a second with no validator and no market hours.
-//! That is what makes the mock oracle worth building before touching Pyth.
+//! That is what makes the keeper oracle worth having behind a seam: the same
+//! account shape is written by a test here and by the keeper on devnet.
 
 #![allow(dead_code)]
 
@@ -50,7 +51,7 @@ pub struct Ctx {
     pub mint: Pubkey,
     pub market: Pubkey,
     pub vault: Pubkey,
-    /// The mock price account this market settles against.
+    /// The keeper price feed this market settles against.
     pub price_feed: Pubkey,
     /// Wallet entitled to the protocol fee, and its token account.
     pub treasury: Keypair,
@@ -201,13 +202,13 @@ pub fn setup() -> Ctx {
         &program_id,
     );
     let (vault, _) = Pubkey::find_program_address(&[b"vault", market.as_ref()], &program_id);
-    let (price_feed, _) = Pubkey::find_program_address(&[b"mock_price", TICKER], &program_id);
+    let (price_feed, _) = Pubkey::find_program_address(&[b"price_feed", TICKER], &program_id);
 
     let treasury = Keypair::new();
     svm.airdrop(&treasury.pubkey(), 1_000_000_000).unwrap();
     let treasury_ata = create_token_account(&mut svm, &admin, &mint, &treasury.pubkey());
 
-    Ctx {
+    let mut ctx = Ctx {
         svm,
         program_id,
         admin,
@@ -217,7 +218,13 @@ pub fn setup() -> Ctx {
         price_feed,
         treasury,
         treasury_ata,
-    }
+    };
+
+    // The feed account has to exist before anything can publish into it.
+    #[cfg(feature = "keeper-oracle")]
+    init_price_feed(&mut ctx).expect("init_price_feed");
+
+    ctx
 }
 
 pub fn default_params(ctx: &Ctx) -> InitMarketParams {
@@ -267,32 +274,76 @@ pub fn position_pda(ctx: &Ctx, user: &Pubkey) -> Pubkey {
 // Instructions
 // ---------------------------------------------------------------------------
 
-/// `publish_time: None` means "as of now".
+/// Opens the keeper price feed. Called once from `setup`.
+#[cfg(feature = "keeper-oracle")]
+pub fn init_price_feed(ctx: &mut Ctx) -> Result<(), String> {
+    let admin = ctx.admin.insecure_clone();
+    let ix = Instruction::new_with_bytes(
+        ctx.program_id,
+        &movex_equities::instruction::InitPriceFeed {
+            underlying: *TICKER,
+            publisher: admin.pubkey(),
+        }
+        .data(),
+        movex_equities::accounts::InitPriceFeed {
+            authority: admin.pubkey(),
+            price_feed: ctx.price_feed,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    send(&mut ctx.svm, &admin, &[ix], &[&admin])
+}
+
+/// Publishes a price. `publish_time: None` means "as of now".
 ///
-/// Gated with the instruction it calls, so a build without the mock oracle
-/// still compiles its tests rather than failing on a missing account type.
-#[cfg(feature = "dev-oracle")]
+/// The program requires each price to be strictly newer than the last, so a
+/// test that publishes twice at the same clock would be rejected. Nudging the
+/// clock forward here keeps that guarantee real in the program rather than
+/// relaxing it for the convenience of tests.
+#[cfg(feature = "keeper-oracle")]
 pub fn set_mock_price(
     ctx: &mut Ctx,
     price: u64,
     publish_time: Option<i64>,
 ) -> Result<(), String> {
+    let admin = ctx.admin.insecure_clone();
+
+    let ts = match publish_time {
+        Some(t) => t,
+        None => {
+            let current = ctx
+                .svm
+                .get_account(&ctx.price_feed)
+                .map(|raw| {
+                    let mut data: &[u8] = &raw.data;
+                    movex_equities::state::PriceFeed::try_deserialize(&mut data)
+                        .map(|f| f.publish_time)
+                        .unwrap_or(0)
+                })
+                .unwrap_or(0);
+            if now(&ctx.svm) <= current {
+                warp_to(&mut ctx.svm, current + 1);
+            }
+            now(&ctx.svm)
+        }
+    };
+
     let ix = Instruction::new_with_bytes(
         ctx.program_id,
-        &movex_equities::instruction::SetMockPrice {
-            underlying: *TICKER,
+        &movex_equities::instruction::UpdatePrice {
             price,
-            publish_time,
+            conf: 0,
+            publish_time: ts,
+            source_count: 1,
         }
         .data(),
-        movex_equities::accounts::SetMockPrice {
-            authority: ctx.admin.pubkey(),
-            mock_price: ctx.price_feed,
-            system_program: system_program::ID,
+        movex_equities::accounts::UpdatePrice {
+            publisher: admin.pubkey(),
+            price_feed: ctx.price_feed,
         }
         .to_account_metas(None),
     );
-    let admin = ctx.admin.insecure_clone();
     send(&mut ctx.svm, &admin, &[ix], &[&admin])
 }
 

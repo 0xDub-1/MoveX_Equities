@@ -6,12 +6,12 @@ market, no order book, no leverage, no liquidations.
 ## Build
 
 ```bash
-# production shape: no mock oracle, no faucet
+# production shape: no keeper oracle, no faucet
 anchor build --arch v0 && cargo test
 
 # devnet shape: everything
-anchor build --arch v0 -- --features dev-oracle,devnet-faucet
-cargo test --features dev-oracle,devnet-faucet
+anchor build --arch v0 -- --features keeper-oracle,devnet-faucet
+cargo test --features keeper-oracle,devnet-faucet
 ```
 
 Both shapes are kept green. The production one is the check that matters:

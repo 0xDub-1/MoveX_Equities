@@ -95,19 +95,34 @@ pub mod movex_equities {
         crate::instructions::faucet::handle_faucet_mint(ctx)
     }
 
-    /// Development only, compiled out without `dev-oracle`.
-    #[cfg(feature = "dev-oracle")]
-    pub fn set_mock_price(
-        ctx: Context<SetMockPrice>,
+    /// Opens a keeper-published price feed for one underlying.
+    ///
+    /// Compiled out without `keeper-oracle`: a mainnet build reads Pyth and
+    /// has no instruction capable of writing a price at all.
+    #[cfg(feature = "keeper-oracle")]
+    pub fn init_price_feed(
+        ctx: Context<InitPriceFeed>,
         underlying: [u8; 8],
-        price: u64,
-        publish_time: Option<i64>,
+        publisher: Pubkey,
     ) -> Result<()> {
-        crate::instructions::set_mock_price::handle_set_mock_price(
+        crate::instructions::price_feed::handle_init_price_feed(ctx, underlying, publisher)
+    }
+
+    /// Publishes a price. Only the feed's publisher may call it.
+    #[cfg(feature = "keeper-oracle")]
+    pub fn update_price(
+        ctx: Context<UpdatePrice>,
+        price: u64,
+        conf: u64,
+        publish_time: i64,
+        source_count: u8,
+    ) -> Result<()> {
+        crate::instructions::price_feed::handle_update_price(
             ctx,
-            underlying,
             price,
+            conf,
             publish_time,
+            source_count,
         )
     }
 }

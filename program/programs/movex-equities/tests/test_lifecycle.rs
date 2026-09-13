@@ -8,9 +8,9 @@
 //! The whole file needs a price it can control, so it only exists in a
 //! `dev-oracle` build:
 //!
-//!     anchor build --arch v0 -- --features dev-oracle
-//!     cargo test --features dev-oracle
-#![cfg(feature = "dev-oracle")]
+//!     anchor build --arch v0 -- --features keeper-oracle
+//!     cargo test --features keeper-oracle
+#![cfg(feature = "keeper-oracle")]
 
 mod common;
 use common::*;

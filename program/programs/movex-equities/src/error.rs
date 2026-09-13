@@ -54,6 +54,10 @@ pub enum ErrorCode {
     OracleNotConfigured,
     #[msg("Oracle confidence interval is too wide to settle against")]
     OracleConfidenceTooWide,
+    #[msg("Only this feed's publisher may write to it")]
+    OracleUnauthorizedPublisher,
+    #[msg("Price is not newer than the one already published")]
+    OraclePriceNotNewer,
 
     // -- claim --------------------------------------------------------------
     #[msg("This position has already been claimed")]

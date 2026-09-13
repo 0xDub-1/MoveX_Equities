@@ -17,7 +17,9 @@ name = "movex_equities"
 #   anchor build --arch v0 -- --features dev-oracle
 #   cargo test --features dev-oracle
 default = []
-dev-oracle = []
+# Reads prices from a PriceFeed account our keeper writes, instead of Pyth.
+# Devnet only: Pyth moved Hermes behind a $500/month key in August 2026.
+keeper-oracle = []
 # Self-serve test-token faucet. Devnet only, for the same reason: a
 # production build must have no instruction that can mint the quote asset.
 devnet-faucet = []

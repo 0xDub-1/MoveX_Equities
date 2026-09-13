@@ -113,18 +113,44 @@ impl Market {
     }
 }
 
-/// A price an admin can set to anything, for driving a market through its
-/// lifecycle without waiting on market hours.
+/// A price published by our own keeper.
 ///
-/// Compiled out entirely unless `dev-oracle` is enabled, so a production
-/// build has no such account type and no instruction that writes one.
-#[cfg(feature = "dev-oracle")]
+/// Deliberately shaped like a Pyth sponsored feed: one fixed address per
+/// underlying, updated continuously, read by both the program and the UI.
+/// That is not imitation for its own sake. It means swapping to Pyth on
+/// mainnet changes one file rather than the shape of everything above it.
+///
+/// What it lacks compared to Pyth is not structure, it is publishers. There
+/// is exactly one and it is us, which is stated plainly in the README rather
+/// than papered over. It exists because Pyth moved Hermes behind a $500/month
+/// key in August 2026, which is outside a hackathon budget.
+///
+/// Compiled out entirely without `keeper-oracle`, so a production build has
+/// no such account type and no instruction that writes one.
+#[cfg(feature = "keeper-oracle")]
 #[account]
 #[derive(InitSpace)]
-pub struct MockPrice {
-    pub authority: Pubkey,
+pub struct PriceFeed {
+    pub underlying: [u8; 8],
+    /// The only key allowed to write prices here.
+    pub publisher: Pubkey,
+    /// Scaled by `KEEPER_PRICE_EXPONENT`.
     pub price: u64,
+    /// Spread across the sources that agreed on it, same scale.
+    ///
+    /// The analogue of Pyth's confidence interval, and consumed by exactly
+    /// the same check: a wide band means the sources disagree and the market
+    /// refuses to settle rather than picking a number out of the spread.
+    pub conf: u64,
+    /// When the *source* produced this price, not when it was written here.
+    ///
+    /// The distinction is the whole staleness check. A price written a second
+    /// ago carrying Friday's close is stale, and must read as stale.
     pub publish_time: i64,
+    /// Slot of the write. Only for diagnosing publisher lag.
+    pub posted_slot: u64,
+    /// How many independent sources agreed on this price.
+    pub source_count: u8,
     pub bump: u8,
 }
 
