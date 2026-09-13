@@ -104,10 +104,40 @@ Phases 1 and 2 are complete, 53 tests:
 | | |
 |---|---|
 | `init_market` `deposit` `withdraw` | market creation and the deposit path |
-| `lock` `settle` `claim` | the full lifecycle, behind a mock oracle |
+| `lock` `settle` `claim` | the full lifecycle |
 | `void_market` | releases a market whose feed never recovered |
 | `collect_fee` | pushes a settled market's fee to its treasury |
 | `init_faucet` `faucet_mint` | devnet test token |
+| `init_price_feed` `update_price` | the devnet oracle, see below |
 
-Phase 3 replaces the mock oracle with Pyth, adds staleness and
-confidence-interval checks, and deploys to devnet.
+Deployed to devnet at `9j2X63EpuSxBSqfMKNrcbQUFzzrXiU8ok2PbUYucZ8zL`.
+
+## Where prices come from, stated plainly
+
+The production build reads Pyth. The devnet build reads a `PriceFeed`
+account our own keeper publishes into every minute during market hours.
+
+That split is not a preference. Pyth moved its Hermes API behind a
+$500/month key in August 2026, which is outside a hackathon budget, and the
+devnet sponsored equity feeds have not been updated in over two months as a
+result. Reading them would settle markets against a price from June.
+
+**What the devnet oracle lacks against Pyth is not structure, it is
+publishers.** There is one and it is us. The account is deliberately shaped
+like a Pyth sponsored feed, one fixed address per underlying updated
+continuously, so the program and the UI read it the same way and swapping
+back to Pyth is one file. But on devnet, settlement prices are ours to
+assert, and nothing on chain proves them.
+
+What that does not touch is the part this project is actually about. The
+strike is still recomputed on chain from its own published samples, and owes
+the oracle nothing.
+
+Three constraints on the write path: only the feed's declared publisher may
+write, prices must move strictly forward in time so a stale update cannot be
+replayed over a fresh one, and the same confidence bound the Pyth path
+applies is enforced on write and again on read.
+
+`publish_time` is when the source produced the price, never when it reached
+the chain. A price written a second ago carrying Friday's close is stale and
+reads as stale.
