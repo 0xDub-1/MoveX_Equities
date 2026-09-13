@@ -52,6 +52,8 @@ pub enum ErrorCode {
     OraclePriceInvalid,
     #[msg("This build has no oracle configured")]
     OracleNotConfigured,
+    #[msg("Oracle confidence interval is too wide to settle against")]
+    OracleConfidenceTooWide,
 
     // -- claim --------------------------------------------------------------
     #[msg("This position has already been claimed")]

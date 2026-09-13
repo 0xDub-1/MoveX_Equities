@@ -25,6 +25,13 @@ use crate::error::ErrorCode;
 /// price.
 pub const MAX_PRICE_AGE_SECS: i64 = 120;
 
+/// The confidence band may be at most 1/100th of the price, so 1%.
+///
+/// Expressed as a divisor rather than basis points because the comparison is
+/// `conf <= price / RATIO`, which needs no multiplication and therefore no
+/// overflow check on the price side.
+pub const MAX_CONFIDENCE_RATIO: u64 = 100;
+
 /// One price reading, already validated for staleness.
 ///
 /// `price` carries whatever scale the source publishes. Nothing downstream
@@ -71,12 +78,68 @@ fn read_price_inner(feed: &AccountInfo) -> Result<PriceReading> {
     })
 }
 
+/// Exponent every reading is normalised to.
+///
+/// Pyth publishes a price plus its own exponent, and that exponent is not
+/// guaranteed to be identical between two reads of the same feed. Comparing
+/// a reference taken at one exponent against a settlement taken at another
+/// would produce a move that is wrong by a factor of ten, silently. So both
+/// are converted to a fixed scale on the way in and the rest of the program
+/// never sees an exponent at all.
 #[cfg(not(feature = "dev-oracle"))]
-fn read_price_inner(_feed: &AccountInfo) -> Result<PriceReading> {
-    // Phase 3 replaces this with a Pyth read plus a confidence-interval
-    // check. Failing loudly beats returning a plausible zero: a build
-    // without an oracle must not be able to settle anything.
-    Err(error!(ErrorCode::OracleNotConfigured))
+pub const TARGET_EXPONENT: i32 = -8;
+
+#[cfg(not(feature = "dev-oracle"))]
+fn read_price_inner(feed: &AccountInfo) -> Result<PriceReading> {
+    use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
+
+    let data = feed.try_borrow_data()?;
+    let mut slice: &[u8] = &data;
+    let update = PriceUpdateV2::try_deserialize(&mut slice)
+        .map_err(|_| error!(ErrorCode::OracleAccountInvalid))?;
+
+    let message = update.price_message;
+
+    // A negative price is not a cheap stock, it is a broken feed.
+    require!(message.price > 0, ErrorCode::OraclePriceInvalid);
+
+    // Confidence is Pyth's own statement of how much its publishers
+    // disagree. A wide band at the close means the price we would settle
+    // against is not one the market agrees on, so the market voids rather
+    // than picking a number out of the spread.
+    let price_abs = message.price as u64;
+    let max_conf = price_abs
+        .checked_div(MAX_CONFIDENCE_RATIO)
+        .ok_or(ErrorCode::MathOverflow)?;
+    require!(message.conf <= max_conf, ErrorCode::OracleConfidenceTooWide);
+
+    Ok(PriceReading {
+        price: normalize(message.price, message.exponent)?,
+        publish_time: message.publish_time,
+    })
+}
+
+/// Rescales a Pyth price to `TARGET_EXPONENT`.
+#[cfg(not(feature = "dev-oracle"))]
+fn normalize(price: i64, exponent: i32) -> Result<u64> {
+    let shift = exponent
+        .checked_sub(TARGET_EXPONENT)
+        .ok_or(ErrorCode::MathOverflow)?;
+
+    let value = price as i128;
+    let scaled = if shift >= 0 {
+        let factor = 10i128
+            .checked_pow(u32::try_from(shift).map_err(|_| error!(ErrorCode::MathOverflow))?)
+            .ok_or(ErrorCode::MathOverflow)?;
+        value.checked_mul(factor).ok_or(ErrorCode::MathOverflow)?
+    } else {
+        let factor = 10i128
+            .checked_pow(u32::try_from(-shift).map_err(|_| error!(ErrorCode::MathOverflow))?)
+            .ok_or(ErrorCode::MathOverflow)?;
+        value / factor
+    };
+
+    u64::try_from(scaled).map_err(|_| error!(ErrorCode::MathOverflow))
 }
 
 /// Absolute move between two readings, in basis points.
