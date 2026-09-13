@@ -6,12 +6,19 @@
 //! Two pools, no order book, no leverage, no liquidations. The worst outcome
 //! available to a depositor is losing the stake they chose.
 //!
-//! Phase 1 covers market creation and the deposit path. `lock`, `settle` and
-//! `claim` arrive in Phase 2.
+//! A market's life:
+//!
+//! ```text
+//!   init_market ──► deposit / withdraw ──► lock ──► settle ──► claim
+//!                                            │         │
+//!                                            └─ void ──┴──────► claim (refund)
+//! ```
 
 pub mod constants;
 pub mod error;
 pub mod instructions;
+pub mod oracle;
+pub mod payout;
 pub mod state;
 pub mod strike;
 
@@ -44,5 +51,42 @@ pub mod movex_equities {
     /// Pulls a deposit back out. Only before lock.
     pub fn withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
         crate::instructions::withdraw::handle_withdraw(ctx, amount)
+    }
+
+    /// Freezes deposits and records the reference price. Permissionless.
+    pub fn lock(ctx: Context<Lock>) -> Result<()> {
+        crate::instructions::lock::handle_lock(ctx)
+    }
+
+    /// Records the settlement price and picks a side. Permissionless.
+    pub fn settle(ctx: Context<Settle>) -> Result<()> {
+        crate::instructions::settle::handle_settle(ctx)
+    }
+
+    /// Collects a winning share, or a refund from a voided market.
+    pub fn claim(ctx: Context<Claim>) -> Result<()> {
+        crate::instructions::claim::handle_claim(ctx)
+    }
+
+    /// Releases a market that never resolved. Permissionless, and only after
+    /// the grace period.
+    pub fn void_market(ctx: Context<VoidMarket>) -> Result<()> {
+        crate::instructions::void_market::handle_void_market(ctx)
+    }
+
+    /// Development only, compiled out without `dev-oracle`.
+    #[cfg(feature = "dev-oracle")]
+    pub fn set_mock_price(
+        ctx: Context<SetMockPrice>,
+        underlying: [u8; 8],
+        price: u64,
+        publish_time: Option<i64>,
+    ) -> Result<()> {
+        crate::instructions::set_mock_price::handle_set_mock_price(
+            ctx,
+            underlying,
+            price,
+            publish_time,
+        )
     }
 }

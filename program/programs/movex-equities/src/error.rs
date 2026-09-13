@@ -26,4 +26,38 @@ pub enum ErrorCode {
     SettleBeforeLock,
     #[msg("Arithmetic overflow")]
     MathOverflow,
+
+    // -- lifecycle ----------------------------------------------------------
+    #[msg("Market is not locked")]
+    MarketNotLocked,
+    #[msg("Market has not resolved yet")]
+    MarketNotResolved,
+    #[msg("Too early to lock this market")]
+    TooEarlyToLock,
+    #[msg("Too early to settle this market")]
+    TooEarlyToSettle,
+    #[msg("Too early to void this market")]
+    TooEarlyToVoid,
+    #[msg("Market has already resolved")]
+    MarketAlreadyResolved,
+
+    // -- oracle -------------------------------------------------------------
+    #[msg("Oracle account does not match the one this market was created with")]
+    OracleFeedMismatch,
+    #[msg("Oracle account could not be read")]
+    OracleAccountInvalid,
+    #[msg("Oracle price is stale")]
+    OraclePriceStale,
+    #[msg("Oracle price is not usable")]
+    OraclePriceInvalid,
+    #[msg("This build has no oracle configured")]
+    OracleNotConfigured,
+
+    // -- claim --------------------------------------------------------------
+    #[msg("This position has already been claimed")]
+    AlreadyClaimed,
+    #[msg("This position is not on the winning side")]
+    NotOnWinningSide,
+    #[msg("There is nothing to claim")]
+    NothingToClaim,
 }

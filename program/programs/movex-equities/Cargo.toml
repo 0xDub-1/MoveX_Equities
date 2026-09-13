@@ -10,7 +10,14 @@ crate-type = ["cdylib", "lib"]
 name = "movex_equities"
 
 [features]
+# Deliberately not in `default`. The mock oracle must be absent from any
+# build that was not explicitly asked for it, so a production artefact
+# cannot settle against a price an admin typed in.
+#
+#   anchor build --arch v0 -- --features dev-oracle
+#   cargo test --features dev-oracle
 default = []
+dev-oracle = []
 cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-log-ix-name = []

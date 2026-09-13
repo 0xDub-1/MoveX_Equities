@@ -107,6 +107,21 @@ impl Market {
     }
 }
 
+/// A price an admin can set to anything, for driving a market through its
+/// lifecycle without waiting on market hours.
+///
+/// Compiled out entirely unless `dev-oracle` is enabled, so a production
+/// build has no such account type and no instruction that writes one.
+#[cfg(feature = "dev-oracle")]
+#[account]
+#[derive(InitSpace)]
+pub struct MockPrice {
+    pub authority: Pubkey,
+    pub price: u64,
+    pub publish_time: i64,
+    pub bump: u8,
+}
+
 #[account]
 #[derive(InitSpace)]
 pub struct Position {
