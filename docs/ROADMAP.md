@@ -91,21 +91,65 @@ Both oracle reads land at 16:00 ET, a live market moment, so staleness handling 
 
 These drift daily as the window rolls. The current window is a relatively quiet stretch for NVDA.
 
-### Remaining Phase 0 work
+### Ported into the repo
 
-- Port the spike into the repo as a proper script with the `PriceHistoryProvider` interface.
-- Trading calendar handling: assert 20 distinct sessions and print the dates, so a holiday bug cannot pass silently.
-- Emit the JSON contract below.
+The spike is gone. The calculation now lives in `keeper/`, inside a CDK app
+scaffolded with `cdk init`, so the Phase 3 infrastructure has somewhere to
+land without a second migration.
+
+```
+keeper/
+  lib/lambdas/strikes/
+    config.ts            lookback, percentiles, which rungs each ticker lists
+    providers/types.ts   PriceHistoryProvider, the swap boundary
+    providers/yahoo.ts   the only file that knows where bars come from
+    sessions.ts          close-to-close moves plus window validation
+    strikes.ts           percentile maths, pure and network-free
+    report.ts            orchestration, emits the JSON contract
+    handler.ts           Lambda entry, Powertools logging
+  scripts/strikes.ts     npm run strikes
+  lib/keeper-stack.ts    Lambda plus EventBridge Schedule
+```
+
+`npm run strikes` and the scheduled keeper run the same code path. The only
+difference is output formatting, so a green run locally is evidence about the
+keeper rather than about the script.
+
+Three things the port added beyond the spike:
+
+- **The in-progress session cannot enter the window.** The provider takes an
+  exclusive `before` date and drops anything on or after it. The keeper fires
+  at 15:55 ET while the session is still open, and vendors return today's
+  partial bar with a "close" that is really just the last print. Calibrating
+  against a price that never existed as a close would have been invisible.
+- **Window validation.** Wrong session count, duplicates, out-of-order dates,
+  weekends and non-positive closes throw. Wide calendar gaps and implausible
+  moves warn instead, because a market holiday and a dropped session look
+  identical from here and we would rather log a Thanksgiving than refuse to
+  open markets over one.
+- **Dates are printed.** Every session in the window is shown with its close
+  and its move, so a calendar bug has to survive being looked at.
 
 ### Output
 
+`npm run strikes -- --json` emits the contract the keeper will hand to
+`init_market`. Real output, trimmed to one ticker:
+
 ```json
 {
-  "session": "2026-09-15",
+  "session": "2026-09-13",
+  "generatedAt": "2026-09-13T18:22:04.118Z",
+  "provider": "yahoo",
+  "lookback": 20,
   "tickers": {
     "NVDA": {
-      "samples": [0.8, 1.1, 1.2, "... 20 values"],
-      "strikes": { "tight": 1.7, "fair": 2.6, "wide": 3.7 }
+      "samples": [0.03, 0.06, 0.07, "... 20 values ...", 4.57, 8.74],
+      "strikes":    { "tight": 0.89, "fair": 1.55, "wide": 2.35 },
+      "strikesBps": { "tight": 89,   "fair": 155,  "wide": 235  },
+      "rungs": ["tight", "fair", "wide"],
+      "sessions": [{ "date": "2026-08-14", "close": 225.16, "movePct": 0.06 }],
+      "window": { "from": "2026-08-14", "to": "2026-09-11", "count": 20 },
+      "lastClose": 218.29
     }
   }
 }
@@ -113,9 +157,15 @@ These drift daily as the window rolls. The current window is a relatively quiet 
 
 The `samples` array is not debug output. It ships to the UI as the public justification for the threshold, so it is a first-class field.
 
+`strikesBps` carries the same thresholds as integers, which is what the program stores. Comparing a settled move against a float strike on-chain is a rounding argument waiting to happen.
+
+`errors` appears only when a ticker fails. One broken ticker does not stop the others opening; all of them broken throws, so a provider outage surfaces as a failed invocation rather than an empty report that looks fine.
+
 ### Exit criteria
 
-`npm run strikes` prints three real strikes plus the 20-session series for all three tickers, computed from live historical data. **Met by the spike; formalising it in the repo is the remaining work.**
+`npm run strikes` prints three real strikes plus the 20-session series for all three tickers, computed from live historical data. **Met.** All three ladders reproduce the published numbers exactly, from live Yahoo data, over the window 2026-08-14 to 2026-09-11.
+
+39 tests pass. The percentile maths is pinned against the NVDA series quoted in the public docs, so if the calculation ever drifts, the docs become wrong and the suite says so.
 
 ---
 
@@ -207,7 +257,9 @@ Cron cannot express market holidays, so the Lambda checks whether today is a tra
 - Swap the mock for real Pyth reads in the non-dev build. The mock remains, compiled out of anything but dev.
 - Staleness and confidence-interval checks, with voiding on failure.
 - Deploy to devnet.
-- Keeper script: reads Phase 0 strikes, calls `init_market` for each rung, cranks `lock` and `settle` on schedule.
+- Extend `ComputeStrikesLambda` to call `init_market` for each listed rung. The strike half already runs on schedule; what it is missing is a program to call.
+- Add the second lambda, cranking `lock` and `settle` at 16:00 ET. Held back deliberately: a scheduled stub logging "not implemented" every weekday is noise pretending to be progress.
+- Move the holiday check into the handler. It does not matter yet, because on a holiday the provider returns no new session and the recomputed ladder is identical. It starts mattering the moment this opens markets.
 - Seed the markets: NVDA with the full three-rung ladder, TSLA and SPY with FAIR only.
 - Seed a parallel crypto market so there is always a live market to demo outside market hours.
 
@@ -295,7 +347,9 @@ A demo where the user cannot collect their winnings is not a demo of this produc
 ```
 SUN   Phase 0   Data spike. DONE. Two findings: Yahoo over Pyth
                 Benchmarks, and close-to-close over open-to-close.
+                Ported into keeper/, plus the CDK app it schedules from.
                 → real strikes computed from live data ✓
+                → 39 tests green, stack deployable ✓
 
 MON   Phase 1   Program skeleton, deposits
                 → localnet deposit test green
@@ -319,4 +373,8 @@ FRI   Phase 5   README, submit with buffer
 
 ## Immediate next action
 
-Phase 0 answered its question, so there is no longer an external dependency blocking anything. Next is porting the spike into the repo behind the provider interface, then straight into Phase 1.
+Phase 0 is closed. The question it existed to answer is answered, the calculation is in the repo behind the provider interface, and the CDK app it will be scheduled from is ready to deploy.
+
+Phase 1: the Anchor workspace, the `Market`, `Position` and vault accounts, and the deposit path.
+
+One piece of Phase 3 was pulled forward while the CDK scaffold was being set up, because it cost nothing to do then and would have cost a context switch on Wednesday: the keeper stack is written and deployable. It runs the strike calibration on schedule and logs the ladder. What it cannot do yet is open a market, because there is no program to open one on. That is the only thing standing between it and being the finished keeper.
