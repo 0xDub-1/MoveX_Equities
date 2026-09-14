@@ -100,9 +100,14 @@ describe('schedules', () => {
     });
   });
 
-  it('runs the seeder past the moment the intraday markets are posted', () => {
+  /**
+   * Offset off the hour on purpose. Markets are created at 09:00, 15:55 and
+   * 20:00, and a seeder on those same minutes would race the creation it
+   * exists to follow rather than reliably run after it.
+   */
+  it('runs the seeder after each creation moment, not alongside it', () => {
     template.hasResourceProperties('AWS::Scheduler::Schedule', {
-      ScheduleExpression: 'cron(*/10 9-20 ? * MON-FRI *)',
+      ScheduleExpression: 'cron(5-55/10 9-20 ? * MON-FRI *)',
       ScheduleExpressionTimezone: 'America/New_York',
     });
   });

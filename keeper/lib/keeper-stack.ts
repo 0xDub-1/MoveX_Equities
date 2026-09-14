@@ -288,14 +288,18 @@ export class KeeperStack extends cdk.Stack {
       'Create the close-to-close markets that lock at today\'s close',
     );
 
-    // Every ten minutes from the hour before the open to the hour after the
+    // Every ten minutes from the hour before the open until after the
     // intraday markets are posted, so both creation moments are followed by
     // a tick that funds what they made. Later ticks are no-ops for any
     // market the wallets already hold positions in.
+    //
+    // Offset five minutes off the hour rather than on it. Markets are
+    // created at 09:00, 15:55 and 20:00, and a seeder sharing those minutes
+    // would race the creation it exists to follow.
     this.schedule(
       'SeederSchedule',
       'seeder',
-      ScheduleExpression.cron({ minute: '*/10', hour: '9-20', weekDay: 'MON-FRI', timeZone: ny }),
+      ScheduleExpression.cron({ minute: '5-55/10', hour: '9-20', weekDay: 'MON-FRI', timeZone: ny }),
       'Fund both sides of open markets and claim seed-wallet winnings',
     );
   }
