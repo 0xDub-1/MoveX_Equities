@@ -20,6 +20,7 @@ import type { Program } from "@coral-xyz/anchor";
 import { CalendarCoverageError, easternDate, isTradingDay } from "../shared/calendar";
 import { CRANK_GRACE_MINUTES } from "../shared/config";
 import { candidates } from "../shared/candidates";
+import { needsPriceUpdate } from "../shared/feed";
 import { bn, getProgram, marketPda, priceFeedPda } from "../shared/solana";
 import { liveQuote, officialClose } from "../shared/quotes";
 
@@ -47,6 +48,25 @@ export const handler = async () => {
   const infos = await program.provider.connection.getMultipleAccountsInfo(addresses);
   const accounts = program.account as unknown as {
     market: { coder: unknown; fetch(a: (typeof addresses)[number]): Promise<any> };
+    priceFeed: { fetch(a: (typeof addresses)[number]): Promise<any> };
+  };
+
+  /**
+   * The publish time each feed currently carries, read once per ticker and
+   * kept current as this run writes to it.
+   *
+   * Every rung of a ladder shares one feed and locks at the same instant, so
+   * without this the second rung would try to write a price the first just
+   * wrote and be refused, taking its own lock down with it.
+   */
+  const feedPublishTimes = new Map<string, number>();
+  const feedPublishTime = async (symbol: string): Promise<number> => {
+    const cached = feedPublishTimes.get(symbol);
+    if (cached !== undefined) return cached;
+    const feed = await accounts.priceFeed.fetch(priceFeedPda(program.programId, symbol));
+    const ts = Number(feed.publishTime);
+    feedPublishTimes.set(symbol, ts);
+    return ts;
   };
 
   const locked: string[] = [];
@@ -81,16 +101,39 @@ export const handler = async () => {
        *
        * It is also how Pyth's pull oracle is meant to be used, so this moves
        * toward the mainnet design rather than away from it.
+       *
+       * The write is skipped when the feed already carries this exact quote.
+       * `update_price` demands a strictly newer publish time, so writing a
+       * duplicate is refused and the refusal would take the lock or settle
+       * bundled with it down too. That is what it did to seven of nine daily
+       * markets on 14 September 2026: one rung per ticker went through and
+       * the rest never locked.
        */
-      const withFreshPrice = async (quote: Awaited<ReturnType<typeof liveQuote>>) => [
-        await program.methods
-          .updatePrice(bn(quote.price), bn(quote.conf), bn(quote.publishTime), quote.sourceCount)
-          .accounts({
-            publisher: program.provider.publicKey!,
-            priceFeed: priceFeedPda(program.programId, spec.symbol),
-          })
-          .instruction(),
-      ];
+      const withFreshPrice = async (quote: Awaited<ReturnType<typeof liveQuote>>) => {
+        const published = await feedPublishTime(spec.symbol);
+        if (!needsPriceUpdate(quote.publishTime, published)) {
+          logger.info("feed already carries this quote, not rewriting it", {
+            label,
+            publishTime: quote.publishTime,
+          });
+          return [];
+        }
+        return [
+          await program.methods
+            .updatePrice(bn(quote.price), bn(quote.conf), bn(quote.publishTime), quote.sourceCount)
+            .accounts({
+              publisher: program.provider.publicKey!,
+              priceFeed: priceFeedPda(program.programId, spec.symbol),
+            })
+            .instruction(),
+        ];
+      };
+
+      /** The feed moved forward only if the transaction that wrote it landed. */
+      const rememberPublished = (quote: Awaited<ReturnType<typeof liveQuote>>) => {
+        const published = feedPublishTimes.get(spec.symbol) ?? 0;
+        feedPublishTimes.set(spec.symbol, Math.max(published, quote.publishTime));
+      };
 
       // A daily market settles on the official close, which the auction sets
       // and prints a little after the bell. An hourly one settles mid-session,
@@ -116,6 +159,7 @@ export const handler = async () => {
           .accounts(common)
           .preInstructions(await withFreshPrice(quote))
           .rpc();
+        rememberPublished(quote);
         logger.info("locked", { label, price: quote.price.toString() });
         locked.push(label);
       } else if (state === "locked" && now >= settleTs) {
@@ -133,6 +177,7 @@ export const handler = async () => {
           .accounts(common)
           .preInstructions(await withFreshPrice(quote))
           .rpc();
+        rememberPublished(quote);
         logger.info("settled", { label, price: quote.price.toString(), isDaily });
         settled.push(label);
       }
