@@ -116,7 +116,7 @@ export default function WalletButton({
           className="absolute right-0 top-full mt-1.5 z-50 w-56 rounded-md border border-line-2 bg-surface-1 shadow-2xl shadow-black/60 overflow-hidden"
         >
           <div className="px-3 py-2.5 border-b border-line-1">
-            <p className="font-mono text-[9.5px] tracking-[0.16em] uppercase text-text-3">
+            <p className="font-mono text-[11px] tracking-[0.16em] uppercase text-text-3">
               {wallet?.adapter.name ?? "Wallet"} · Devnet
             </p>
             <p className="font-mono text-[11px] text-text-2 mt-1 break-all leading-snug">{address}</p>

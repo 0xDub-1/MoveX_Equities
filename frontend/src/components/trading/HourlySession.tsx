@@ -12,7 +12,6 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
 import { fmtEtDayLong, fmtEtTime } from "@/lib/calendar";
-import { TICKER_NAMES, type Ticker } from "@/lib/config";
 import type { MarketGroup } from "@/lib/groups";
 import { fmtBps, fmtChance, fmtMultiple, fmtPct, fmtUsdx } from "@/lib/format";
 import {
@@ -34,23 +33,25 @@ import {
 import { cn } from "@/lib/utils";
 
 import { Badge, Countdown } from "@/components/ui/primitives";
+import GroupHeader from "./GroupHeader";
 import MoveMeter from "./MoveMeter";
 import SideSplit, { SIDE_TEXT } from "./SideSplit";
 
-const COLUMNS =
-  "lg:grid-cols-[136px_92px_minmax(0,1fr)_minmax(0,1fr)_112px_150px_20px]";
+const COLUMNS = "lg:grid-cols-[140px_96px_minmax(0,1fr)_minmax(0,1fr)_116px_148px_16px]";
 
 function SideCell({ market, side }: { market: MarketView; side: Side }) {
   const empty = pot(market) === 0n;
   return (
-    <div className="flex items-baseline gap-2 font-mono tabular">
+    <div className="flex items-baseline gap-2.5 font-mono tabular">
       <span className={cn("text-[11.5px] font-semibold tracking-[0.06em]", SIDE_TEXT[side])}>
         {SIDE_META[side].label}
       </span>
-      <span className="text-[15px] font-semibold text-text-1">
+      <span className="text-[16px] font-semibold leading-none text-text-1">
         {empty ? "--" : fmtChance(poolShare(market, side))}
       </span>
-      <span className="text-[11.5px] text-text-3">pays {fmtMultiple(payoutMultiple(market, side))}</span>
+      <span className="text-[11.5px] text-text-3">
+        pays <span className="text-text-2">{fmtMultiple(payoutMultiple(market, side))}</span>
+      </span>
     </div>
   );
 }
@@ -60,9 +61,9 @@ function Standing({ market, feed }: { market: MarketView; feed: PriceFeedView | 
   const ready = market.referencePrice > 0n && price !== undefined;
   const lead = ready ? sideAt(market, price) : null;
   return (
-    <div className="flex items-center gap-4">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
       <MoveMeter
-        className="w-[140px] shrink-0"
+        className="w-[132px] shrink-0"
         showLabel={false}
         reference={market.referencePrice}
         current={price}
@@ -81,7 +82,7 @@ function Standing({ market, feed }: { market: MarketView; feed: PriceFeedView | 
 
 function Outcome({ market }: { market: MarketView }) {
   const winner = market.winningSide;
-  if (!winner) return <span className="text-text-3">Settled</span>;
+  if (!winner) return <span className="text-[13px] text-text-3">Settled</span>;
   const measured = market.referencePrice > 0n;
   const signed = measured ? signedMovePct(market.referencePrice, market.settlementPrice) : 0;
   const bps = measured ? moveBps(market.referencePrice, market.settlementPrice) : 0;
@@ -128,7 +129,15 @@ function Clock({ market, phase }: { market: MarketView; phase: MarketPhase }) {
   }
 }
 
-function Row({ market, now, feed }: { market: MarketView; now: number; feed: PriceFeedView | undefined }) {
+function Row({
+  market,
+  now,
+  feed,
+}: {
+  market: MarketView;
+  now: number;
+  feed: PriceFeedView | undefined;
+}) {
   const phase = phaseOf(market, now);
   const meta = PHASE_META[phase];
   const live = phase === "live" || phase === "awaiting-settle";
@@ -139,13 +148,17 @@ function Row({ market, now, feed }: { market: MarketView; now: number; feed: Pri
     <Link
       href={`/market/${market.key}`}
       className={cn(
-        "group grid grid-cols-1 gap-3 px-4 py-3.5 transition-colors hover:bg-white/[0.03] lg:items-center lg:gap-4 lg:py-0 lg:h-[60px]",
+        "group relative grid grid-cols-1 gap-3 px-4 py-4 transition-colors hover:bg-white/[0.035]",
+        "lg:h-[64px] lg:items-center lg:gap-4 lg:py-0",
         COLUMNS,
-        live && "bg-below/[0.04]",
+        live && "bg-below/[0.05]",
       )}
     >
+      {/* A left edge that marks the hour being measured. */}
+      {live && <span className="absolute inset-y-0 left-0 w-[2px] bg-below" aria-hidden />}
+
       <div className="flex items-center justify-between gap-3 lg:block">
-        <span className="font-mono text-[13.5px] font-semibold tabular text-text-1">
+        <span className="font-mono text-[14px] font-semibold tabular text-text-1">
           {fmtEtTime(market.lockTs)}
           <span className="font-medium text-text-4"> to </span>
           {fmtEtTime(market.settleTs)}
@@ -225,41 +238,41 @@ export default function HourlySession({
 
   return (
     <section className="animate-fade-up">
-      <header className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <span className="font-display text-[21px] font-semibold tracking-tight text-text-1">
-              {group.symbol}
-            </span>
-            <span className="text-[13px] text-text-3">{TICKER_NAMES[group.symbol as Ticker] ?? ""}</span>
-            <Badge size="sm">Hourly</Badge>
-            {live > 0 && (
-              <Badge size="sm" tone="sky" dot pulse>
-                {live} live
-              </Badge>
-            )}
-          </div>
-          <p className="mt-1 text-[13px] text-text-2">
+      <GroupHeader
+        symbol={group.symbol}
+        kind="Hourly"
+        feed={feed}
+        now={now}
+        pot={total}
+        badge={
+          live > 0 ? (
+            <Badge size="sm" tone="sky" dot pulse>
+              {live} live
+            </Badge>
+          ) : undefined
+        }
+        description={
+          <>
             {fmtEtDayLong(group.lockTs)}. Will {group.symbol} move more than{" "}
-            <span className="font-mono tabular text-text-1">{fmtBps(lead.strikeBps)}</span> within the
-            hour? It did in {samplesCleared(lead)} of the last {lead.samplesBps.length} hours.
-          </p>
-        </div>
-        <div className="flex items-center gap-4 font-mono text-[12px] tabular text-text-3">
-          <span>
-            Pot <span className="text-text-1">{fmtUsdx(total, { compact: true })}</span> USDX
-          </span>
+            <span className="font-mono font-semibold tabular text-text-1">
+              {fmtBps(lead.strikeBps)}
+            </span>{" "}
+            within the hour? It did in {samplesCleared(lead)} of the last {lead.samplesBps.length}{" "}
+            hours.
+          </>
+        }
+        trailing={
           <span>
             <span className="text-text-1">{group.markets.length - done}</span> to go ·{" "}
             <span className="text-text-1">{done}</span> settled
           </span>
-        </div>
-      </header>
+        }
+      />
 
-      <div className="overflow-hidden rounded-md border border-line-2 bg-surface-2">
+      <div className="overflow-hidden rounded-lg border border-line-2 bg-surface-2">
         <div
           className={cn(
-            "hidden border-b border-line-1 px-4 py-2 font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-text-3 lg:grid lg:gap-4",
+            "hidden border-b border-line-1 bg-white/[0.015] px-4 py-2.5 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-text-3 lg:grid lg:gap-4",
             COLUMNS,
           )}
         >

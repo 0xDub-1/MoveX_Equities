@@ -61,7 +61,7 @@ function SlotCell({ market, current, now }: { market: MarketView; current: boole
       </p>
       <div className="mt-2 flex items-center justify-between gap-2">
         <PhaseBadge phase={phaseOf(market, now)} size="sm" />
-        <span className="font-mono text-[9.5px] uppercase tracking-[0.14em] text-text-4">
+        <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-4">
           {TIER_META[market.tier].label}
         </span>
       </div>
@@ -109,7 +109,7 @@ export default function LadderSiblings({
         number="05"
         label={daily ? "Ladder" : "Session"}
         trailing={
-          <span className="font-mono text-[10.5px] tabular text-text-3">
+          <span className="font-mono text-[11.5px] tabular text-text-3">
             {daily ? fmtSessionDate(market.sessionId) : fmtEtDay(market.lockTs)}
           </span>
         }

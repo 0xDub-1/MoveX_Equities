@@ -20,6 +20,7 @@ export default function SamplesHistogram({
   siblings = [],
   className,
   height = 96,
+  unit = "sessions",
 }: {
   samplesBps: number[];
   strikeBps: number;
@@ -28,6 +29,8 @@ export default function SamplesHistogram({
   siblings?: { tier: Tier; strikeBps: number }[];
   className?: string;
   height?: number;
+  /** What one sample is: sessions for a daily market, hours for an hourly one. */
+  unit?: string;
 }) {
   const max = Math.max(...samplesBps, strikeBps, 1) * 1.08;
   const exceeded = samplesBps.filter((s) => s > strikeBps).length;
@@ -74,7 +77,7 @@ export default function SamplesHistogram({
           className="absolute left-0 right-0 border-t-[1.5px] border-text-1"
           style={{ bottom: `${(strikeBps / max) * 100}%` }}
         >
-          <span className="absolute left-0 -top-4 font-mono text-[9px] font-semibold tracking-[0.14em] uppercase text-text-1 bg-surface-1/90 pr-1.5">
+          <span className="absolute left-0 -top-4 font-mono text-[10.5px] font-semibold tracking-[0.14em] uppercase text-text-1 bg-surface-1/90 pr-1.5">
             {meta.label} {fmtBps(strikeBps)}
           </span>
         </div>
@@ -82,7 +85,7 @@ export default function SamplesHistogram({
 
       <div className="mt-2 flex items-center justify-between gap-3 font-mono text-[10px] tabular text-text-3">
         <span>
-          <span className="text-above">{exceeded}</span> of {samplesBps.length} sessions exceeded it
+          <span className="text-above">{exceeded}</span> of {samplesBps.length} {unit} exceeded it
         </span>
         <span>
           {fmtBps(samplesBps[0] ?? 0)} to {fmtBps(samplesBps[samplesBps.length - 1] ?? 0)}

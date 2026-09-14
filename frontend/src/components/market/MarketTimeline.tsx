@@ -151,7 +151,7 @@ export default function MarketTimeline({
                 >
                   {step.label}
                 </p>
-                <p className={cn("mt-1 font-mono text-[10.5px] tabular", dim ? "text-text-4" : "text-text-3")}>
+                <p className={cn("mt-1 font-mono text-[11.5px] tabular", dim ? "text-text-4" : "text-text-3")}>
                   {step.time}
                 </p>
                 <p className={cn("mt-0.5 text-[11px] leading-snug", dim ? "text-text-4" : "text-text-3")}>

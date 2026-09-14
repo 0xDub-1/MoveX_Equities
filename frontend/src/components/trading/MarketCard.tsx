@@ -4,11 +4,12 @@
 // Market card
 // =============================================================================
 //
-// One rung of a daily ladder as a card. It reads top down the way a person
-// decides: the question, how often it has come true lately, what each
-// answer pays right now, and how long is left to take a side.
+// One rung of a daily ladder. It reads top down the way a person decides:
+// the question, how often it has come true lately, what each answer pays
+// right now, and how long is left to take a side.
 
 import Link from "next/link";
+import { ArrowUpRight } from "lucide-react";
 
 import { fmtEtTime } from "@/lib/calendar";
 import { fmtBps, fmtMultiple, fmtPct, fmtUsdx } from "@/lib/format";
@@ -31,6 +32,7 @@ import { cn } from "@/lib/utils";
 
 import { Badge, Countdown } from "@/components/ui/primitives";
 import MoveMeter from "./MoveMeter";
+import SamplesSpark from "./SamplesSpark";
 import SideSplit, { SIDE_TEXT } from "./SideSplit";
 
 function LiveBlock({ market, feed }: { market: MarketView; feed: PriceFeedView | undefined }) {
@@ -38,9 +40,9 @@ function LiveBlock({ market, feed }: { market: MarketView; feed: PriceFeedView |
   const ready = market.referencePrice > 0n && price !== undefined;
   const lead = ready ? sideAt(market, price) : null;
   return (
-    <div className="rounded-md border border-line-2 bg-surface-1 px-3 py-3">
+    <div className="rounded-md border border-line-2 bg-surface-1 px-3.5 py-3">
       <MoveMeter reference={market.referencePrice} current={price} strikeBps={market.strikeBps} />
-      <p className={cn("mt-2.5 text-[13px] font-semibold", lead ? SIDE_TEXT[lead] : "text-text-3")}>
+      <p className={cn("mt-3 text-[13px] font-semibold", lead ? SIDE_TEXT[lead] : "text-text-3")}>
         {lead ? `${SIDE_META[lead].label} is winning right now` : "Waiting for a price"}
       </p>
     </div>
@@ -56,23 +58,25 @@ function SettledBlock({ market }: { market: MarketView }) {
   return (
     <div
       className={cn(
-        "rounded-md border px-3 py-3",
-        winner === "above" ? "border-above/40 bg-above/[0.07]" : "border-below/40 bg-below/[0.07]",
+        "rounded-md border px-3.5 py-3",
+        winner === "above" ? "border-above/35 bg-above/[0.07]" : "border-below/35 bg-below/[0.07]",
       )}
     >
       <div className="flex items-baseline justify-between gap-3">
-        <span className={cn("text-[14px] font-semibold", SIDE_TEXT[winner])}>
+        <span className={cn("text-[14.5px] font-semibold", SIDE_TEXT[winner])}>
           {SIDE_META[winner].label} won
         </span>
         {measured && (
-          <span className="font-mono text-[13px] tabular text-text-1">
-            moved {fmtPct(signed, { signed: true })}
+          <span className="font-mono text-[13px] font-semibold tabular text-text-1">
+            {fmtPct(signed, { signed: true })}
           </span>
         )}
       </div>
-      <p className="mt-1 text-[12px] text-text-3">
-        {measured ? `${bps > market.strikeBps ? "Past" : "Within"} the ${fmtBps(market.strikeBps)} threshold. ` : ""}
-        {SIDE_META[winner].label} paid {fmtMultiple(payoutMultiple(market, winner))}.
+      <p className="mt-1.5 text-[12px] text-text-2">
+        {measured
+          ? `Moved ${bps > market.strikeBps ? "past" : "within"} the ${fmtBps(market.strikeBps)} threshold. `
+          : ""}
+        Paid {fmtMultiple(payoutMultiple(market, winner))}.
       </p>
     </div>
   );
@@ -99,7 +103,7 @@ function FooterClock({ market, phase }: { market: MarketView; phase: MarketPhase
     case "settled":
       return <span>Settled {fmtEtTime(market.settleTs)} ET</span>;
     case "voided":
-      return <span className="text-loss">Voided, refunds open</span>;
+      return <span className="text-loss">Refunds open</span>;
   }
 }
 
@@ -118,6 +122,7 @@ export default function MarketCard({
   const meta = PHASE_META[phase];
   const tier = TIER_META[market.tier];
   const live = phase === "live" || phase === "awaiting-settle";
+  const open = phase === "deposits" || phase === "awaiting-lock";
   const cleared = samplesCleared(market);
   const unit = market.kind === "daily" ? "sessions" : "hours";
 
@@ -125,34 +130,49 @@ export default function MarketCard({
     <Link
       href={`/market/${market.key}`}
       className={cn(
-        "group flex flex-col rounded-md border bg-surface-2 p-4 transition-colors",
-        live
-          ? "border-below/30 hover:border-below/50"
-          : "border-line-2 hover:border-line-3 hover:bg-surface-3/80",
+        "group relative flex flex-col overflow-hidden rounded-lg border bg-surface-2 p-4 sm:p-5",
+        "transition-[border-color,background-color,transform,box-shadow] duration-200",
+        "hover:-translate-y-px hover:shadow-lg hover:shadow-black/30",
+        live ? "border-below/25 hover:border-below/45" : "border-line-2 hover:border-line-3",
         className,
       )}
     >
-      <div className="flex items-center justify-between gap-2">
+      {/* A one pixel highlight along the top edge. */}
+      <span
+        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"
+        aria-hidden
+      />
+
+      <div className="flex items-start justify-between gap-3">
         <span className="font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-text-3">
-          {tier.label} · {tier.ordinal} percentile
+          {tier.label}
+          <span className="text-text-4"> · {tier.ordinal} pct</span>
         </span>
         <Badge tone={meta.tone} size="sm" dot={live} pulse={phase === "live"}>
           {meta.label}
         </Badge>
       </div>
 
-      <h3 className="mt-2.5 text-[15.5px] font-semibold leading-snug tracking-tight text-text-1">
+      <h3 className="mt-3 text-[16px] font-semibold leading-[1.35] tracking-[-0.01em] text-text-1">
         Will {market.symbol} move more than{" "}
         <span className="font-mono tabular">{fmtBps(market.strikeBps)}</span>?
       </h3>
-      <p className="mt-1 text-[12.5px] text-text-3">
-        It did in {cleared} of the last {market.samplesBps.length} {unit}.
-      </p>
+
+      <div className="mt-3.5 flex items-end gap-3">
+        <SamplesSpark
+          className="w-[104px] shrink-0"
+          samplesBps={market.samplesBps}
+          strikeBps={market.strikeBps}
+        />
+        <p className="min-w-0 text-[12px] leading-snug text-text-2">
+          It did in{" "}
+          <span className="font-mono font-semibold tabular text-text-1">{cleared}</span> of the last{" "}
+          {market.samplesBps.length} {unit}
+        </p>
+      </div>
 
       <div className="mt-4">
-        {(phase === "deposits" || phase === "awaiting-lock") && (
-          <SideSplit market={market} amounts={false} />
-        )}
+        {open && <SideSplit market={market} amounts={false} />}
         {live && (
           <>
             <LiveBlock market={market} feed={feed} />
@@ -161,7 +181,7 @@ export default function MarketCard({
         )}
         {phase === "settled" && <SettledBlock market={market} />}
         {phase === "voided" && (
-          <div className="rounded-md border border-loss/30 bg-loss/[0.06] px-3 py-3 text-[13px] text-loss">
+          <div className="rounded-md border border-loss/30 bg-loss/[0.06] px-3.5 py-3 text-[12.5px] leading-relaxed text-loss">
             This market never settled. Every deposit is refunded in full.
           </div>
         )}
@@ -171,7 +191,13 @@ export default function MarketCard({
         <span>
           Pot <span className="text-text-1">{fmtUsdx(pot(market), { compact: true })}</span> USDX
         </span>
-        <FooterClock market={market} phase={phase} />
+        <span className="flex items-center gap-1.5">
+          <FooterClock market={market} phase={phase} />
+          <ArrowUpRight
+            size={12}
+            className="text-text-4 opacity-0 transition-opacity group-hover:opacity-100"
+          />
+        </span>
       </div>
     </Link>
   );

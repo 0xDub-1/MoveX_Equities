@@ -46,8 +46,19 @@ const CELL_BORDERS = [
   "border-l border-t border-line-1 lg:border-t-0",
 ];
 
+/** A quiet glow behind the cell that carries the most weight right now. */
+function Accent({ show }: { show: boolean }) {
+  if (!show) return null;
+  return (
+    <span
+      className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand/50 to-transparent"
+      aria-hidden
+    />
+  );
+}
+
 function Unit() {
-  return <span className="ml-1 font-sans text-[12px] font-medium text-text-4">USDX</span>;
+  return <span className="ml-1.5 font-mono text-[12px] font-medium text-text-3">USDX</span>;
 }
 
 function CellSkeleton() {
@@ -85,7 +96,8 @@ export default function KpiStrip({ kpis, loading }: { kpis: Kpis; loading: boole
     <Surface as="section">
       <div className="grid grid-cols-2 lg:grid-cols-4">
         {cells.map((cell, i) => (
-          <div key={cell.label} className={cn("px-4 py-4 sm:px-5", CELL_BORDERS[i])}>
+          <div key={cell.label} className={cn("relative px-4 py-4 sm:px-5", CELL_BORDERS[i])}>
+            <Accent show={!loading && i === 2 && kpis.claimable > 0n} />
             {loading ? (
               <CellSkeleton />
             ) : (

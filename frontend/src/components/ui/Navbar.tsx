@@ -6,11 +6,10 @@
 //
 //   56px sticky header, hairline bottom border, blurred near-black backdrop.
 //   Wordmark, network pill, two links, the New York clock with the session
-//   state, oracle health, and the wallet. Below md the links and status
-//   collapse into a drawer.
+//   state, and the wallet. Below md the links and the clock collapse into a
+//   drawer.
 
 import { useCallback, useEffect, useState } from "react";
-// The Escape key handler below is the one effect this component keeps.
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -20,7 +19,6 @@ import { BarChart3, Menu, Wallet, X } from "lucide-react";
 import { fmtEtClock, sessionStatus } from "@/lib/calendar";
 import { cn } from "@/lib/utils";
 import { useNow } from "@/hooks/useNow";
-import { useFeedHealth } from "@/hooks/usePriceFeeds";
 
 import WalletButton from "./WalletButton";
 
@@ -37,36 +35,17 @@ function isActive(pathname: string, href: string): boolean {
 }
 
 /** The New York clock and whether the session is trading. */
-function SessionClock({ compact = false }: { compact?: boolean }) {
+function SessionClock() {
   const now = useNow();
-  if (!now) return <div className="h-4 w-28 skeleton" />;
+  if (!now) return <div className="h-4 w-32 skeleton" />;
   const at = new Date(now * 1000);
   const status = sessionStatus(at);
   return (
-    <div
-      className="flex items-center gap-2 font-mono text-[10px] font-medium tracking-[0.12em] uppercase text-text-2"
-      title={status.nextLabel}
-    >
+    <div className="flex items-center gap-2.5 text-[12px] font-medium" title={status.nextLabel}>
       <span className={cn("status-dot", !status.open && "idle")} />
-      <span className="tabular text-text-1">{fmtEtClock(at)}</span>
-      <span className="text-text-4">ET</span>
-      {!compact && <span className="text-text-3">{status.label}</span>}
-    </div>
-  );
-}
-
-function OracleHealth() {
-  const now = useNow();
-  const health = useFeedHealth(now);
-  const tone = health.allFresh ? "" : health.anyFresh ? "idle" : "offline";
-  const label = health.allFresh ? "Oracle live" : health.anyFresh ? "Oracle partial" : "Oracle idle";
-  return (
-    <div
-      className="flex items-center gap-2 font-mono text-[10px] font-medium tracking-[0.12em] uppercase text-text-2"
-      title={`${health.fresh} of ${health.total} feeds published in the last two minutes`}
-    >
-      <span className={cn("status-dot", tone)} />
-      <span>{label}</span>
+      <span className="font-mono tabular text-text-1">{fmtEtClock(at)}</span>
+      <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-4">ET</span>
+      <span className="text-text-2">{status.label}</span>
     </div>
   );
 }
@@ -88,21 +67,25 @@ export default function Navbar() {
   const closeMenu = useCallback(() => setMenuOpen(false), []);
 
   return (
-    <header className="sticky top-0 z-50 bg-[#06070A]/85 backdrop-blur-md border-b border-line-1">
-      <div className="flex items-center justify-between px-4 sm:px-6 h-14 gap-3">
-        <div className="flex items-center gap-3 shrink-0 min-w-0">
-          <Link href="/" className="flex items-center gap-2.5 hover:opacity-90 transition-opacity" aria-label="MoveX Equities home">
+    <header className="sticky top-0 z-50 border-b border-line-1 bg-[#06070A]/85 backdrop-blur-md">
+      <div className="flex h-14 items-center justify-between gap-3 px-4 sm:px-6">
+        <div className="flex min-w-0 shrink-0 items-center gap-3">
+          <Link
+            href="/"
+            className="flex items-center gap-2.5 transition-opacity hover:opacity-90"
+            aria-label="MoveX Equities home"
+          >
             <Image src="/logo.png" alt="MoveX" width={110} height={27} className="h-[22px] w-auto" priority />
-            <span className="hidden sm:inline font-display text-[13px] font-medium tracking-[0.02em] text-text-2 border-l border-line-2 pl-2.5">
+            <span className="hidden border-l border-line-2 pl-2.5 font-display text-[13px] font-medium tracking-[0.02em] text-text-2 sm:inline">
               Equities
             </span>
           </Link>
-          <span className="hidden sm:inline-flex items-center h-5 px-1.5 rounded-sm border border-line-2 font-mono text-[9px] font-medium tracking-[0.18em] uppercase text-text-3">
+          <span className="hidden h-5 items-center rounded-sm border border-line-2 px-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-text-3 sm:inline-flex">
             Devnet
           </span>
         </div>
 
-        <nav className="hidden md:flex items-center gap-1">
+        <nav className="hidden items-center gap-1 md:flex">
           {NAV_ITEMS.map((item) => {
             const active = isActive(pathname, item.href);
             return (
@@ -110,8 +93,8 @@ export default function Navbar() {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-1.5 h-8 px-3 rounded-md text-[13px] font-medium transition-colors",
-                  active ? "bg-white/[0.06] text-text-1" : "text-text-2 hover:text-text-1 hover:bg-white/[0.03]",
+                  "flex h-8 items-center gap-1.5 rounded-md px-3 text-[13px] font-medium transition-colors",
+                  active ? "bg-white/[0.07] text-text-1" : "text-text-2 hover:bg-white/[0.03] hover:text-text-1",
                 )}
               >
                 <item.icon size={13} />
@@ -121,18 +104,16 @@ export default function Navbar() {
           })}
         </nav>
 
-        <div className="flex items-center gap-3 shrink-0">
-          <div className="hidden lg:flex items-center gap-4">
+        <div className="flex shrink-0 items-center gap-3">
+          <div className="hidden items-center gap-3 lg:flex">
             <SessionClock />
-            <span className="h-4 w-px bg-line-2" />
-            <OracleHealth />
             <span className="h-4 w-px bg-line-2" />
           </div>
           <WalletButton />
           <button
             type="button"
             onClick={toggleMenu}
-            className="md:hidden flex items-center justify-center h-9 w-9 rounded-md border border-line-2 bg-white/[0.03] text-text-1 hover:bg-white/[0.07] transition-colors"
+            className="flex h-9 w-9 items-center justify-center rounded-md border border-line-2 bg-white/[0.03] text-text-1 transition-colors hover:bg-white/[0.07] md:hidden"
             aria-label={menuOpen ? "Close menu" : "Open menu"}
             aria-expanded={menuOpen}
           >
@@ -160,9 +141,9 @@ export default function Navbar() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.15, ease: "easeOut" }}
-              className="absolute inset-x-0 top-14 z-50 md:hidden border-t border-line-1 bg-[#06070A]/95 backdrop-blur-lg shadow-2xl"
+              className="absolute inset-x-0 top-14 z-50 border-t border-line-1 bg-[#06070A]/95 shadow-2xl backdrop-blur-lg md:hidden"
             >
-              <div className="px-4 py-3 flex flex-col gap-1">
+              <div className="flex flex-col gap-1 px-4 py-3">
                 {NAV_ITEMS.map((item) => {
                   const active = isActive(pathname, item.href);
                   return (
@@ -171,8 +152,8 @@ export default function Navbar() {
                       href={item.href}
                       onClick={closeMenu}
                       className={cn(
-                        "flex items-center gap-3 h-11 px-3 rounded-md text-sm font-medium transition-colors",
-                        active ? "bg-white/[0.06] text-text-1" : "text-text-2 hover:text-text-1 hover:bg-white/[0.03]",
+                        "flex h-11 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
+                        active ? "bg-white/[0.07] text-text-1" : "text-text-2 hover:bg-white/[0.03] hover:text-text-1",
                       )}
                     >
                       <item.icon size={16} />
@@ -180,9 +161,8 @@ export default function Navbar() {
                     </Link>
                   );
                 })}
-                <div className="mt-2 pt-3 border-t border-line-1 flex flex-col gap-2.5">
+                <div className="mt-2 border-t border-line-1 pt-3">
                   <SessionClock />
-                  <OracleHealth />
                 </div>
               </div>
             </motion.div>

@@ -15,7 +15,6 @@ import LadderGroup from "./LadderGroup";
 import MoveGauge from "./MoveGauge";
 import SamplesHistogram from "./SamplesHistogram";
 import SideSplit from "./SideSplit";
-import TickerStrip from "./TickerStrip";
 
 export default function PreviewPage() {
   const now = useNow();
@@ -28,20 +27,21 @@ export default function PreviewPage() {
 
   if (!now) return null;
 
-  const tsla = markets.filter((m) => m.symbol === "TSLA");
-  const tslaFair = tsla.find((m) => m.tier === "fair")!;
-  const nvdaFair = markets.find((m) => m.symbol === "NVDA" && m.tier === "fair" && m.kind === "daily")!;
+  const tslaFair = markets.find((m) => m.symbol === "TSLA" && m.tier === "fair")!;
+  const nvdaFair = markets.find(
+    (m) => m.symbol === "NVDA" && m.tier === "fair" && m.kind === "daily",
+  )!;
   const spyFair = markets.find((m) => m.symbol === "SPY" && m.tier === "fair")!;
   const siblings = (symbol: string) =>
-    markets.filter((m) => m.symbol === symbol && m.kind === "daily").map((m) => ({ tier: m.tier, strikeBps: m.strikeBps }));
+    markets
+      .filter((m) => m.symbol === symbol && m.kind === "daily")
+      .map((m) => ({ tier: m.tier, strikeBps: m.strikeBps }));
 
   return (
-    <div className="max-w-[1400px] w-full mx-auto px-4 sm:px-6 py-6 flex flex-col gap-8">
-      <p className="font-mono text-[11px] tracking-[0.16em] uppercase text-warning">
+    <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-8 px-4 py-6 sm:px-6">
+      <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-warning">
         Preview on fixtures. Development only.
       </p>
-
-      <TickerStrip feeds={feeds} markets={markets} now={now} selected="all" onSelect={() => {}} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Surface>
@@ -87,7 +87,7 @@ export default function PreviewPage() {
         </Surface>
         <Surface>
           <SectionHeader number="04" label="Samples and the two answers" />
-          <div className="p-5 flex flex-col gap-6">
+          <div className="flex flex-col gap-6 p-5">
             <SamplesHistogram
               samplesBps={nvdaFair.samplesBps}
               strikeBps={nvdaFair.strikeBps}

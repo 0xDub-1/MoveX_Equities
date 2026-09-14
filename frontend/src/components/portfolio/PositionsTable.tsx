@@ -84,7 +84,7 @@ function MarketCell({ market }: { market: MarketView }) {
         <span className="font-display text-[15px] font-semibold tracking-tight text-text-1">
           {market.symbol}
         </span>
-        <TierTag tier={market.tier} className="h-5 px-1.5 text-[9px]" />
+        <TierTag tier={market.tier} className="h-5 px-1.5 text-[10.5px]" />
         <span className="font-mono text-[11px] tabular text-text-2">{fmtBps(market.strikeBps)}</span>
         <Eyebrow size="sm" className="text-text-4">
           {market.kind}
@@ -233,7 +233,7 @@ function Th({ children, className }: { children: ReactNode; className?: string }
     <th
       scope="col"
       className={cn(
-        "whitespace-nowrap px-3 py-2.5 text-left font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-text-3",
+        "whitespace-nowrap px-3 py-2.5 text-left font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-text-3",
         className,
       )}
     >

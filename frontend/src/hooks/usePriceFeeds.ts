@@ -8,7 +8,7 @@
 // and additionally subscribed over the RPC websocket so a fresh print lands
 // in the UI the moment it lands on chain.
 
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useConnection } from "@solana/wallet-adapter-react";
 
@@ -85,11 +85,3 @@ export function isFeedFresh(feed: PriceFeedView | undefined, nowSec: number): bo
   return nowSec - feed.publishTime <= MAX_PRICE_AGE_SECS;
 }
 
-export function useFeedHealth(nowSec: number) {
-  const { data } = usePriceFeeds();
-  return useMemo(() => {
-    const feeds = Object.values(data ?? {});
-    const fresh = feeds.filter((f) => isFeedFresh(f, nowSec)).length;
-    return { total: TICKERS.length, fresh, allFresh: fresh === TICKERS.length, anyFresh: fresh > 0 };
-  }, [data, nowSec]);
-}

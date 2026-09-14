@@ -4,8 +4,8 @@
 // Side split
 // =============================================================================
 //
-// The two sides of a market as the crowd currently prices them: one chip
-// per side with its implied chance and what it pays, and a bar showing how
+// The two answers of a market as the crowd currently prices them: one panel
+// per answer with its implied chance and what it pays, and a bar showing how
 // the pot is divided. Used on the board, on the market page and in the
 // ladder, so every place reads the same numbers the same way.
 
@@ -23,10 +23,20 @@ import { cn } from "@/lib/utils";
 
 export const SIDE_TEXT: Record<Side, string> = { above: "text-above", below: "text-below" };
 const SIDE_FILL: Record<Side, string> = { above: "bg-above", below: "bg-below" };
-const SIDE_BORDER: Record<Side, string> = { above: "border-above/40", below: "border-below/40" };
-const SIDE_SOFT: Record<Side, string> = { above: "bg-above/[0.08]", below: "bg-below/[0.08]" };
+
+/** Resting and hover treatment per side, so a card hints at being clickable. */
+const SIDE_PANEL: Record<Side, string> = {
+  above: "border-above/25 bg-above/[0.06] group-hover:border-above/45 group-hover:bg-above/[0.1]",
+  below: "border-below/25 bg-below/[0.06] group-hover:border-below/45 group-hover:bg-below/[0.1]",
+};
 
 type ChipState = "normal" | "winner" | "loser";
+
+const SIZE = {
+  sm: { pad: "px-2.5 py-2", label: "text-[11.5px]", pct: "text-[16px]", meta: "text-[11px]" },
+  md: { pad: "px-3 py-2.5", label: "text-[12.5px]", pct: "text-[21px]", meta: "text-[11.5px]" },
+  lg: { pad: "px-4 py-3.5", label: "text-[14px]", pct: "text-[28px]", meta: "text-[12.5px]" },
+} as const;
 
 export function SideChip({
   side,
@@ -42,38 +52,39 @@ export function SideChip({
   chance: number | null;
   pays: number | null;
   amount?: bigint;
-  size?: "sm" | "md" | "lg";
+  size?: keyof typeof SIZE;
   state?: ChipState;
   className?: string;
 }) {
   const meta = SIDE_META[side];
+  const s = SIZE[size];
   const dim = state === "loser";
+
   return (
     <div
       className={cn(
-        "min-w-0 rounded-md border",
-        size === "sm" && "px-2.5 py-2",
-        size === "md" && "px-3 py-2.5",
-        size === "lg" && "px-4 py-3.5",
-        dim ? "border-line-1" : cn(SIDE_BORDER[side], SIDE_SOFT[side]),
+        "min-w-0 rounded-md border transition-colors duration-200",
+        s.pad,
+        dim ? "border-line-1 bg-transparent" : SIDE_PANEL[side],
+        state === "winner" && "ring-1 ring-inset",
+        state === "winner" && (side === "above" ? "ring-above/40" : "ring-below/40"),
         className,
       )}
     >
       <div className="flex items-baseline justify-between gap-2">
         <span
           className={cn(
-            "font-semibold tracking-[0.06em]",
-            size === "sm" ? "text-[11.5px]" : size === "lg" ? "text-[14px]" : "text-[12.5px]",
+            "font-semibold tracking-[0.05em]",
+            s.label,
             dim ? "text-text-3" : SIDE_TEXT[side],
           )}
         >
           {meta.label}
-          {state === "winner" && <span className="ml-1.5 font-medium text-text-2">won</span>}
         </span>
         <span
           className={cn(
-            "font-mono font-semibold tabular",
-            size === "sm" ? "text-[15px]" : size === "lg" ? "text-[26px]" : "text-[20px]",
+            "font-mono font-semibold tabular leading-none tracking-tight",
+            s.pct,
             dim ? "text-text-3" : "text-text-1",
           )}
         >
@@ -82,15 +93,16 @@ export function SideChip({
       </div>
       <div
         className={cn(
-          "mt-1 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 font-mono tabular text-text-3",
-          size === "sm" ? "text-[11px]" : size === "lg" ? "text-[12.5px]" : "text-[11.5px]",
+          "mt-1.5 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5 font-mono tabular text-text-3",
+          s.meta,
         )}
       >
         <span className="whitespace-nowrap">
-          pays <span className={dim ? "text-text-3" : "text-text-2"}>{fmtMultiple(pays)}</span>
+          {state === "winner" ? "paid " : "pays "}
+          <span className={dim ? "text-text-3" : "text-text-1"}>{fmtMultiple(pays)}</span>
         </span>
         {amount !== undefined && (
-          <span className="whitespace-nowrap">{fmtUsdx(amount, { compact: true })} USDX</span>
+          <span className="whitespace-nowrap">{fmtUsdx(amount, { compact: true })}</span>
         )}
       </div>
     </div>
@@ -113,32 +125,30 @@ export function SplitBar({
   return (
     <div
       className={cn(
-        "flex w-full overflow-hidden rounded-full bg-white/[0.06]",
-        size === "sm" ? "h-1.5" : "h-2",
+        "flex w-full gap-[3px] overflow-hidden rounded-full",
+        size === "sm" ? "h-1" : "h-1.5",
         className,
       )}
       role="img"
       aria-label={
-        total === 0n
-          ? "No deposits yet"
-          : `YES ${fmtChance(share)}, NO ${fmtChance(1 - share)}`
+        total === 0n ? "No deposits yet" : `YES ${fmtChance(share)}, NO ${fmtChance(1 - share)}`
       }
     >
       {total === 0n ? (
-        <div className="h-full w-full bg-white/[0.04]" />
+        <div className="h-full w-full rounded-full bg-white/[0.06]" />
       ) : (
         <>
           <div
             className={cn(
-              "h-full transition-[width] duration-500",
-              highlight === "below" ? "bg-above/30" : SIDE_FILL.above,
+              "h-full rounded-full transition-[width] duration-500",
+              highlight === "below" ? "bg-above/25" : SIDE_FILL.above,
             )}
-            style={{ width: `${share * 100}%` }}
+            style={{ width: `calc(${share * 100}% - 1.5px)` }}
           />
           <div
             className={cn(
-              "h-full flex-1 transition-[width] duration-500",
-              highlight === "above" ? "bg-below/30" : SIDE_FILL.below,
+              "h-full flex-1 rounded-full transition-[width] duration-500",
+              highlight === "above" ? "bg-below/25" : SIDE_FILL.below,
             )}
           />
         </>
@@ -156,10 +166,10 @@ export default function SideSplit({
   className,
 }: {
   market: MarketView;
-  size?: "sm" | "md" | "lg";
+  size?: keyof typeof SIZE;
   chips?: boolean;
   amounts?: boolean;
-  /** The winning side once settled; the other chip goes quiet. */
+  /** The winning answer once settled; the other panel goes quiet. */
   highlight?: Side | null;
   className?: string;
 }) {
@@ -190,11 +200,9 @@ export default function SideSplit({
         market={market}
         size={size === "sm" ? "sm" : "md"}
         highlight={highlight}
-        className={chips ? "mt-2" : undefined}
+        className={chips ? "mt-2.5" : undefined}
       />
-      {empty && !chips && (
-        <p className="mt-1.5 text-[11.5px] text-text-3">No deposits yet</p>
-      )}
+      {empty && !chips && <p className="mt-1.5 text-[11.5px] text-text-3">No deposits yet</p>}
     </div>
   );
 }

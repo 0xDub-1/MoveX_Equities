@@ -37,7 +37,7 @@ export function Surface({
   return (
     <Tag
       className={cn(
-        "relative rounded-md border border-line-1 bg-surface-1 overflow-hidden",
+        "relative overflow-hidden rounded-lg border border-line-2 bg-surface-1",
         highlight && "surface-highlight",
         className,
       )}
@@ -83,18 +83,23 @@ export function SectionHeader({
   className?: string;
 }) {
   return (
-    <div className={cn("flex items-center justify-between gap-3 px-4 sm:px-5 py-3 border-b border-line-1", className)}>
-      <div className="flex items-center gap-2.5 min-w-0">
+    <div
+      className={cn(
+        "flex items-center justify-between gap-3 border-b border-line-1 bg-white/[0.015] px-4 py-3 sm:px-5",
+        className,
+      )}
+    >
+      <div className="flex min-w-0 items-center gap-2.5">
         {number && (
-          <span className="font-mono text-[10px] text-text-3 border border-line-2 rounded-sm px-1.5 py-0.5 shrink-0">
+          <span className="shrink-0 rounded-sm border border-line-2 px-1.5 py-0.5 font-mono text-[10.5px] text-text-3">
             {number}
           </span>
         )}
-        <span className="font-mono text-[11px] font-medium tracking-[0.18em] uppercase text-text-2 truncate">
+        <span className="truncate font-mono text-[11.5px] font-medium uppercase tracking-[0.16em] text-text-2">
           {label}
         </span>
       </div>
-      {trailing && <div className="flex items-center gap-2 shrink-0">{trailing}</div>}
+      {trailing && <div className="flex shrink-0 items-center gap-2">{trailing}</div>}
     </div>
   );
 }

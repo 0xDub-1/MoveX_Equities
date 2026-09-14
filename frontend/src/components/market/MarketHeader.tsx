@@ -4,85 +4,88 @@
 // Market header
 // =============================================================================
 //
-// Who, what and when. The ticker with its tags, the window in New York time
-// and the question the market asks, with the threshold and the clock beside.
+// The question this market asks, who it is about, and when it is decided.
+// The question is the product, so it gets the display type; the ticker and
+// the tags sit above it as context.
 
 import { fmtEtDateTime } from "@/lib/calendar";
 import { fmtBps } from "@/lib/format";
 import type { MarketPhase, MarketView } from "@/lib/market";
-import { Badge, Countdown, SideTag, Stat, TierTag } from "@/components/ui/primitives";
+import { Badge, Countdown, Eyebrow, SideTag, TierTag } from "@/components/ui/primitives";
 
 import PhaseBadge from "./PhaseBadge";
 import { companyName, questionOf, windowOf } from "./helpers";
 
-/** Word states sit a step smaller than the numeric ones so they never wrap. */
-const WORD_VALUE = "font-display text-lg sm:text-xl text-text-2";
+/** One right-hand readout: a label over a large value over a caption. */
+function Readout({
+  label,
+  value,
+  sub,
+  wide = false,
+}: {
+  label: string;
+  value: React.ReactNode;
+  sub?: React.ReactNode;
+  /** Word values sit a step smaller so they never wrap. */
+  wide?: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <Eyebrow size="sm">{label}</Eyebrow>
+      <p
+        className={
+          wide
+            ? "mt-1.5 font-display text-[19px] font-semibold leading-none tracking-tight text-text-2"
+            : "mt-1.5 font-display text-[26px] font-semibold leading-none tracking-tight text-text-1 tabular"
+        }
+      >
+        {value}
+      </p>
+      {sub && <p className="mt-1.5 font-mono text-[11.5px] tabular text-text-3">{sub}</p>}
+    </div>
+  );
+}
 
 function Clock({ market, phase }: { market: MarketView; phase: MarketPhase }) {
   switch (phase) {
     case "deposits":
       return (
-        <Stat
+        <Readout
           label="Locks in"
-          size="lg"
           value={<Countdown to={market.lockTs} />}
           sub={fmtEtDateTime(market.lockTs)}
         />
       );
     case "live":
       return (
-        <Stat
+        <Readout
           label="Settles in"
-          size="lg"
           value={<Countdown to={market.settleTs} />}
           sub={fmtEtDateTime(market.settleTs)}
         />
       );
     case "awaiting-lock":
-      return (
-        <Stat
-          label="Lock"
-          size="lg"
-          value="Awaiting lock"
-          valueClassName={WORD_VALUE}
-          sub={`Due ${fmtEtDateTime(market.lockTs)}`}
-        />
-      );
+      return <Readout label="Lock" value="Awaiting" wide sub={`Due ${fmtEtDateTime(market.lockTs)}`} />;
     case "awaiting-settle":
       return (
-        <Stat
-          label="Settlement"
-          size="lg"
-          value="Awaiting settlement"
-          valueClassName={WORD_VALUE}
-          sub={`Due ${fmtEtDateTime(market.settleTs)}`}
-        />
+        <Readout label="Settlement" value="Awaiting" wide sub={`Due ${fmtEtDateTime(market.settleTs)}`} />
       );
     case "settled":
       return (
-        <Stat
-          label="Settled"
-          size="lg"
+        <Readout
+          label="Result"
           value={
             <span className="inline-flex items-center gap-2">
               {market.winningSide && <SideTag side={market.winningSide} />}
               <span>won</span>
             </span>
           }
-          valueClassName={WORD_VALUE}
+          wide
           sub={fmtEtDateTime(market.settleTs)}
         />
       );
     case "voided":
-      return (
-        <Stat
-          label="Status"
-          size="lg"
-          value="Voided"
-          valueClassName={WORD_VALUE}
-          sub="Deposits refunded in full"
-        />
-      );
+      return <Readout label="Status" value="Voided" wide sub="Deposits refunded in full" />;
   }
 }
 
@@ -96,29 +99,27 @@ export default function MarketHeader({
   const name = companyName(market.symbol);
 
   return (
-    <header className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+    <header className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
       <div className="min-w-0">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h1 className="font-display text-3xl sm:text-4xl font-semibold tracking-tight text-text-1">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <h1 className="font-display text-[28px] font-semibold leading-none tracking-tight text-text-1">
             {market.symbol}
           </h1>
-          {name && <span className="text-[15px] text-text-3">{name}</span>}
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {name && <span className="text-[14px] text-text-3">{name}</span>}
+          <span className="hidden h-4 w-px bg-line-2 sm:block" />
           <TierTag tier={market.tier} showPercentile />
           <Badge>{market.kind === "daily" ? "Daily" : "Hourly"}</Badge>
           <PhaseBadge phase={phase} />
         </div>
 
-        <p className="mt-3 font-mono text-[11px] tabular text-text-3">{windowOf(market)}</p>
-        <p className="mt-2 max-w-xl text-[14px] sm:text-[15px] leading-relaxed text-text-2">
+        <p className="mt-4 max-w-2xl font-display text-[19px] font-semibold leading-[1.35] tracking-[-0.01em] text-text-1 sm:text-[22px]">
           {questionOf(market)}
         </p>
+        <p className="mt-2.5 font-mono text-[11.5px] tabular text-text-3">{windowOf(market)}</p>
       </div>
 
-      <div className="flex flex-wrap items-start gap-x-8 gap-y-4 md:shrink-0 md:gap-x-10">
-        <Stat label="Threshold" size="lg" value={fmtBps(market.strikeBps)} sub="either direction" />
+      <div className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-5">
+        <Readout label="Threshold" value={fmtBps(market.strikeBps)} sub="either direction" />
         <Clock market={market} phase={phase} />
       </div>
     </header>

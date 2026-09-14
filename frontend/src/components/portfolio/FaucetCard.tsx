@@ -92,7 +92,7 @@ export default function FaucetCard({
             )}
           </Button>
           {hint && (
-            <p className="font-mono text-[10.5px] tracking-[0.04em] text-warning">{hint}</p>
+            <p className="font-mono text-[11.5px] text-warning">{hint}</p>
           )}
         </div>
 

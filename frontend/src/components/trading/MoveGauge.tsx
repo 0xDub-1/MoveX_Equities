@@ -233,7 +233,7 @@ export default function MoveGauge({
                 style={{ left: `${xOf(p, model.half)}%` }}
                 title={`${TIER_META[s.tier].label} threshold, ${fmtPct(pct)}`}
               >
-                <span className="absolute top-full mt-1 -translate-x-1/2 font-mono text-[9px] uppercase text-text-4">
+                <span className="absolute top-full mt-1 -translate-x-1/2 font-mono text-[10.5px] uppercase text-text-4">
                   {TIER_META[s.tier].label[0]}
                 </span>
               </div>

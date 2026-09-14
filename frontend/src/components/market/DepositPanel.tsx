@@ -431,7 +431,7 @@ function WithdrawForm({
             aria-invalid={error !== null}
             className={cn(INPUT, "text-[16px] sm:text-[13px]")}
           />
-          <span className="ml-2 font-mono text-[10px] uppercase tracking-[0.14em] text-text-3">
+          <span className="ml-2 font-mono text-[11px] uppercase tracking-[0.14em] text-text-3">
             {QUOTE_SYMBOL}
           </span>
         </div>
@@ -487,7 +487,7 @@ function LiveBody({
         <div className="flex items-center justify-between gap-3">
           <Eyebrow>Standing</Eyebrow>
           {feed && (
-            <span className="font-mono text-[10px] tabular text-text-4">{fmtAgo(now - feed.publishTime)}</span>
+            <span className="font-mono text-[11px] tabular text-text-4">{fmtAgo(now - feed.publishTime)}</span>
           )}
         </div>
         <MoveMeter className="mt-3" reference={market.referencePrice} current={price} strikeBps={market.strikeBps} />

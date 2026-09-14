@@ -23,7 +23,9 @@ export default function ThresholdPanel({
   rungs: GaugeSibling[];
 }) {
   const meta = TIER_META[market.tier];
-  const span = market.kind === "daily" ? "close-to-close" : "one-hour";
+  const daily = market.kind === "daily";
+  const span = daily ? "close-to-close" : "one-hour";
+  const unit = daily ? "sessions" : "hours";
   const count = market.samplesBps.length;
 
   return (
@@ -38,6 +40,7 @@ export default function ThresholdPanel({
           tier={market.tier}
           siblings={rungs}
           height={120}
+          unit={unit}
         />
 
         <div className="flex flex-col gap-3 text-[12.5px] leading-relaxed text-text-2">
@@ -49,7 +52,7 @@ export default function ThresholdPanel({
           </div>
           <p>
             {meta.label} is the {PERCENTILE_ORDINAL[market.tier]} percentile of the last {count} {span}{" "}
-            moves. Historically about {meta.baseRate}% of sessions exceeded it.
+            moves. Historically about {meta.baseRate}% of {unit} exceeded it.
           </p>
           <p className="text-text-3">
             The program recomputed this percentile from the {count} samples stored on chain and

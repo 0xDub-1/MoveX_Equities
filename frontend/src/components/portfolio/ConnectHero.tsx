@@ -84,7 +84,7 @@ export default function ConnectHero({ faucet }: { faucet: FaucetState | undefine
               i > 0 && "border-t border-line-1 sm:border-l sm:border-t-0",
             )}
           >
-            <span className="w-fit rounded-sm border border-line-2 px-1.5 py-0.5 font-mono text-[10px] text-text-3">
+            <span className="w-fit rounded-sm border border-line-2 px-1.5 py-0.5 font-mono text-[11px] text-text-3">
               {step.number}
             </span>
             <p className="text-[13px] font-medium text-text-1">{step.title}</p>

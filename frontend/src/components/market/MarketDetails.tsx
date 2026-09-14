@@ -39,7 +39,9 @@ export default function MarketDetails({ market }: { market: MarketView }) {
           <AddressLink address={market.priceFeed.toBase58()} chars={6} />
         </Row>
         <Row label="Session">{market.sessionId}</Row>
-        <Row label="Fee">{market.feeBps} bps of the pot</Row>
+        <Row label="Fee">
+          {market.feeBps / 100}% of the pot, {market.feeBps} bps
+        </Row>
         <Row label="Minimum deposit">
           {fmtUsdx(MIN_DEPOSIT_BASE, { decimals: 0 })} {QUOTE_SYMBOL}
         </Row>
