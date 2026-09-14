@@ -304,6 +304,18 @@ Mostly assembly. The MoveX design system carries over wholesale, so the genuinel
 
 A person who has never seen the app can connect a wallet, deposit into a side, see their position, and claim after settlement, without anyone explaining anything to them.
 
+### Status, Sunday night 2026-09-13
+
+Built ahead of schedule, in `frontend/`, before the first markets exist so the board is ready when the keeper posts them Monday at 09:00 ET.
+
+- Next.js 16 with the wallet adapter (Phantom, Solflare, any wallet-standard wallet), Anchor client, react-query polling plus a websocket subscription on the price feeds.
+- The board: live oracle prices per ticker, daily ladders and hourly sessions grouped, filtered by Open, Live and Resolved.
+- The market page: a price axis centred on the reference with the threshold on both sides and the live print as a marker, the pools with their payout multiples, the 20-sample histogram behind the threshold, the timeline, and the deposit, withdraw and claim panel.
+- The portfolio page: balances, the USDX faucet, positions with withdraw and claim, realised results, and the share card ported from MoveX.
+- Everything is read from chain. There is no server of ours.
+
+Found while wiring the client: Anchor's TypeScript coder accepts enum arguments only in camelCase (`{ tight: {} }`). The keeper passed PascalCase and would have failed every `init_market` and every seeder deposit on the first live run. Fixed in `keeper/lib/lambdas/shared/solana.ts` the same night; the stack has to be redeployed before Monday 09:00 ET.
+
 ---
 
 ## Phase 5: Demo and submission
@@ -389,8 +401,8 @@ FRI   Phase 5   README, submit with buffer
 
 ## Immediate next action
 
-Phase 0 is closed. The question it existed to answer is answered, the calculation is in the repo behind the provider interface, and the CDK app it will be scheduled from is ready to deploy.
+Phases 0 to 4 are built. The program is on devnet, the keeper is scheduled, and the frontend reads it all.
 
-Phase 1: the Anchor workspace, the `Market`, `Position` and vault accounts, and the deposit path.
+Monday 2026-09-14 is the first live run: redeploy the keeper stack with the enum fix before 09:00 ET, then watch the hourly markets post at 09:00, seed at 09:10, lock at 10:00 and settle at 11:00, with the board open in a browser. Anything that breaks in that chain is the day's work. The demo video is recorded Thursday during market hours.
 
 One piece of Phase 3 was pulled forward while the CDK scaffold was being set up, because it cost nothing to do then and would have cost a context switch on Wednesday: the keeper stack is written and deployable. It runs the strike calibration on schedule and logs the ladder. What it cannot do yet is open a market, because there is no program to open one on. That is the only thing standing between it and being the finished keeper.

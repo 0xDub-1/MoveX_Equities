@@ -318,12 +318,18 @@ The keeper submits `update_price` and `lock` (or `settle`) in a single transacti
 |   PriceFeed        ["price_feed", ticker]                    |
 |   Faucet           ["faucet", mint]                          |
 +---------------------------+----------------------------------+
-                            | direct account reads
+                            | direct account reads, wallet-signed writes
                             v
-                         frontend
++--------------------------------------------------------------+
+| frontend/          Next.js 16, wallet adapter, Anchor client |
+|                                                              |
+|   /                the board: prices, ladders, sessions      |
+|   /market/[addr]   price against threshold, pools, deposit   |
+|   /portfolio       balances, faucet, positions, claims       |
++--------------------------------------------------------------+
 ```
 
-The frontend reads program accounts directly. There is no indexing layer. Every address is derivable from ticker, session identifier, and tier.
+The frontend reads program accounts directly and signs deposits, withdrawals and claims with the user's wallet. There is no indexing layer and no server of ours between the browser and the chain. Every address is derivable from ticker, session identifier, and tier.
 
 All schedules are declared in `America/New_York`. Market holidays and early closes are handled by a calendar module that refuses to answer for years it does not cover rather than assuming a weekday is a session.
 
@@ -490,7 +496,28 @@ npm test
 npm run typecheck
 npm run strikes                  # print the current ladders and the series behind them
 npx tsx scripts/preflight.ts     # exercise the lambda code paths without deploying
+
+# Create today's markets ahead of the schedule, signing with the Solana CLI
+# keypair. The lambdas find them already there and skip them.
+RPC_URL=... npx tsx scripts/create-session.ts --dry-run
+RPC_URL=... npx tsx scripts/create-session.ts
+
+# Run a lambda locally with the CLI keypair instead of the parameter store.
+KEYPAIR_PATH=~/.config/solana/devnet.json RPC_URL=... QUOTE_MINT=... \
+  npx tsx -e 'import("./lib/lambdas/keeper/seeder.ts").then((m) => m.handler())'
 ```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+cp .env.example .env.local       # optional: a Helius devnet RPC URL
+npm run dev                      # http://localhost:3000
+npx tsc --noEmit
+```
+
+The app needs no configuration to run against the live devnet deployment. A wallet on devnet, a little SOL for fees, and USDX from the in-app faucet are all a user needs. See `frontend/README.md` for the page map and the on-chain reads behind each screen.
 
 ### Test coverage
 
@@ -500,7 +527,7 @@ npx tsx scripts/preflight.ts     # exercise the lambda code paths without deploy
 | Program, deposit path | 10 | Market creation, deposit, withdraw, rejection cases |
 | Program, lifecycle | 14 | Lock, settle, claim, void, fee collection, tie resolution |
 | Program, faucet | 6 | Cooldown, per-user isolation, mint authority |
-| Keeper | 70 | Ladders, calendar, window validation, stack configuration |
+| Keeper | 93 | Ladders, calendar, window validation, seeding rules, stack configuration |
 
 ---
 
@@ -543,8 +570,19 @@ keeper/
   lib/
     keeper-stack.ts    CDK stack
     lambdas/
-      keeper/          publisher, market creation, crank
+      keeper/          publisher, market creation, crank, seeder
       shared/          calendar, quotes, ladders, Solana client
       strikes/         calibration pipeline
   test/
+
+frontend/
+  src/
+    app/               routes, layout, providers
+    components/
+      trading/         the board and the move gauge
+      market/          market page and deposit panel
+      portfolio/       wallet, faucet, positions, share card
+      ui/              primitives, navbar, wallet button
+    hooks/             react-query wrappers over program accounts
+    lib/               config, IDL, PDAs, market model, calendar
 ```

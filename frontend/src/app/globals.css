@@ -1,0 +1,384 @@
+@import "tailwindcss";
+
+/* ============================================================================
+ * MoveX Equities. Design tokens.
+ * ----------------------------------------------------------------------------
+ * Shared language with the MoveX product surfaces: near-black, hairline
+ * borders, tabular numerics, one brand accent used sparingly. Two side
+ * colours carry the whole product: ABOVE is the brand green, BELOW a cool
+ * sky blue. Neither side is "bad", so neither is red.
+ * ========================================================================= */
+
+:root {
+  --background: #06070a;
+  --foreground: #f4f5f7;
+
+  --surface-0: #06070a;
+  --surface-1: #0b0d11;
+  --surface-2: #101319;
+  --surface-3: #161a21;
+
+  --line-1: rgba(255, 255, 255, 0.06);
+  --line-2: rgba(255, 255, 255, 0.1);
+  --line-3: rgba(255, 255, 255, 0.16);
+
+  --text-1: #f4f5f7;
+  --text-2: #9ba1ad;
+  --text-3: #6b7280;
+  --text-4: #4b5563;
+
+  --brand: #aecb31;
+  --brand-soft: rgba(174, 203, 49, 0.1);
+
+  --above: #aecb31;
+  --below: #4ea1ff;
+
+  --profit: #aecb31;
+  --loss: #f0555c;
+  --warning: #f59e0b;
+  --info: #60a5fa;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+
+  --color-line-1: var(--line-1);
+  --color-line-2: var(--line-2);
+  --color-line-3: var(--line-3);
+
+  --color-text-1: var(--text-1);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+  --color-text-4: var(--text-4);
+
+  --color-brand: var(--brand);
+  --color-above: var(--above);
+  --color-below: var(--below);
+  --color-profit: var(--profit);
+  --color-loss: var(--loss);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
+  --font-display: var(--font-space-grotesk), var(--font-inter), ui-sans-serif, sans-serif;
+
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-pulse-soft: pulse-soft 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-fade-up: fade-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+html {
+  color-scheme: dark;
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01", "cv11";
+  overflow-x: hidden;
+}
+
+::selection {
+  background: rgba(174, 203, 49, 0.25);
+  color: #f4f5f7;
+}
+
+:focus-visible {
+  outline: 1px solid rgba(174, 203, 49, 0.55);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Scrollbars: thin and quiet. */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* Number inputs without spinners. */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* ----------------------------------------------------------------------------
+ * Shared utilities
+ * ------------------------------------------------------------------------- */
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+.hairline {
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(255, 255, 255, 0.1) 20%,
+    rgba(255, 255, 255, 0.1) 80%,
+    transparent
+  );
+}
+
+.surface {
+  background: var(--surface-1);
+  border: 1px solid var(--line-1);
+  border-radius: 6px;
+}
+
+.surface-elevated {
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+}
+
+/* A one pixel highlight along the top edge of a panel. */
+.surface-highlight {
+  position: relative;
+}
+.surface-highlight::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.09), transparent);
+  pointer-events: none;
+}
+
+/* Steady status dot with a soft ring. */
+.status-dot {
+  position: relative;
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--brand);
+  box-shadow: 0 0 0 3px rgba(174, 203, 49, 0.12);
+}
+.status-dot::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 9999px;
+  border: 1px solid rgba(174, 203, 49, 0.35);
+  animation: pulse-soft 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+.status-dot.offline {
+  background: var(--loss);
+  box-shadow: 0 0 0 3px rgba(240, 85, 92, 0.12);
+}
+.status-dot.offline::after {
+  border-color: rgba(240, 85, 92, 0.35);
+}
+.status-dot.idle {
+  background: var(--warning);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.12);
+}
+.status-dot.idle::after {
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+/* Grain overlay, de-flattens dark surfaces. */
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='1'/></svg>");
+  background-size: 200px 200px;
+}
+
+/* Skeleton shimmer. */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+  animation: shimmer 1.6s linear infinite;
+}
+
+/* Range input, used by the deposit slider. */
+input[type="range"].range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+}
+input[type="range"].range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #f4f5f7;
+  border: 2px solid #06070a;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+input[type="range"].range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: #f4f5f7;
+  border: 2px solid #06070a;
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.4);
+  }
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ----------------------------------------------------------------------------
+ * Wallet adapter modal, restyled to the house palette.
+ * The library ships purple defaults; every rule below is a deliberate
+ * override of `@solana/wallet-adapter-react-ui/styles.css`.
+ * ------------------------------------------------------------------------- */
+
+.wallet-adapter-modal {
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+.wallet-adapter-modal-overlay {
+  background: rgba(3, 4, 6, 0.72);
+  backdrop-filter: blur(6px);
+}
+.wallet-adapter-modal-wrapper {
+  background: var(--surface-1);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+  max-width: 400px;
+}
+.wallet-adapter-modal-title {
+  color: var(--text-1);
+  font-family: var(--font-space-grotesk), var(--font-inter), sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  padding: 40px 32px 20px;
+}
+.wallet-adapter-modal-button-close {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line-1);
+  border-radius: 6px;
+}
+.wallet-adapter-modal-button-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.wallet-adapter-modal-button-close svg {
+  fill: var(--text-2);
+}
+.wallet-adapter-modal-list {
+  margin: 0 0 8px;
+}
+.wallet-adapter-modal-list .wallet-adapter-button {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-1);
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+.wallet-adapter-modal-list .wallet-adapter-button:not([disabled]):hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--line-2);
+}
+.wallet-adapter-modal-list .wallet-adapter-button-end-icon,
+.wallet-adapter-modal-list .wallet-adapter-button-start-icon {
+  width: 24px;
+  height: 24px;
+}
+.wallet-adapter-modal-list-more {
+  color: var(--text-2);
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 24px 16px;
+}
+.wallet-adapter-modal-list-more svg {
+  fill: var(--text-3);
+}
+.wallet-adapter-modal-middle {
+  padding: 0 32px 32px;
+}
+.wallet-adapter-modal-middle-button {
+  background: var(--brand);
+  color: #06070a;
+  border-radius: 6px;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 14px;
+}
+.wallet-adapter-modal-middle-button:hover {
+  filter: brightness(1.08);
+}
+.wallet-adapter-modal-middle p {
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.6;
+}

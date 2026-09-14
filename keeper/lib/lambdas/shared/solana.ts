@@ -57,15 +57,27 @@ function base58Decode(input: string): Uint8Array {
   return Uint8Array.from(bytes.reverse());
 }
 
+/**
+ * Local runs only. When set, the secret is read from this file instead of
+ * the parameter store, so a script can exercise a lambda's code path with
+ * the Solana CLI keypair and no AWS session. Never set in the stack.
+ */
+const KEYPAIR_PATH = process.env.KEYPAIR_PATH;
+
 export async function getKeypair(): Promise<Keypair> {
   if (cachedKeypair) return cachedKeypair;
 
-  const result = await ssm.send(
-    new GetParameterCommand({ Name: KEYPAIR_PARAMETER, WithDecryption: true }),
-  );
-
-  const raw = result.Parameter?.Value?.trim();
-  if (!raw) throw new Error(`${KEYPAIR_PARAMETER} is empty`);
+  let raw: string | undefined;
+  if (KEYPAIR_PATH) {
+    const { readFileSync } = await import("node:fs");
+    raw = readFileSync(KEYPAIR_PATH, "utf8").trim();
+  } else {
+    const result = await ssm.send(
+      new GetParameterCommand({ Name: KEYPAIR_PARAMETER, WithDecryption: true }),
+    );
+    raw = result.Parameter?.Value?.trim();
+  }
+  if (!raw) throw new Error(`${KEYPAIR_PATH ?? KEYPAIR_PARAMETER} is empty`);
 
   // Accepts either the base58 form wallets export or the JSON byte array the
   // Solana CLI writes, so the parameter can be populated from either without
@@ -176,11 +188,19 @@ export function bn(value: bigint | number): BN {
   return new BN(value.toString());
 }
 
-/** Anchor's TS client camelCases what the IDL spells in snake_case. */
+/**
+ * Enum arguments, spelled the one way Anchor's coder accepts.
+ *
+ * Anchor camelCases every name in the IDL when the Program is constructed,
+ * variant names included, and the borsh enum layout then looks the argument
+ * up by that camelCased key. `{ Tight: {} }` fails inside the encoder with
+ * "unable to infer src variant"; `{ tight: {} }` is the only form that
+ * encodes. Decoded accounts come back the same way: `{ open: {} }`.
+ */
 export const TIER_VARIANT = {
-  tight: { Tight: {} },
-  fair: { Fair: {} },
-  wide: { Wide: {} },
+  tight: { tight: {} },
+  fair: { fair: {} },
+  wide: { wide: {} },
 } as const;
 
 export function positionPda(programId: PublicKey, market: PublicKey, user: PublicKey): PublicKey {
@@ -202,6 +222,6 @@ export function faucetClaimPda(programId: PublicKey, mint: PublicKey, user: Publ
 }
 
 export const SIDE_VARIANT = {
-  above: { Above: {} },
-  below: { Below: {} },
+  above: { above: {} },
+  below: { below: {} },
 } as const;
