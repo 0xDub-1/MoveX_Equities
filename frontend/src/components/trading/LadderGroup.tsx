@@ -31,24 +31,24 @@ export default function LadderGroup({
 
   return (
     <section className="animate-fade-up">
-      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 mb-2.5 px-0.5">
+      <header className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <span className="font-display text-[19px] font-semibold tracking-tight text-text-1">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="font-display text-[21px] font-semibold tracking-tight text-text-1">
               {group.symbol}
             </span>
-            <span className="text-[12px] text-text-3">{TICKER_NAMES[group.symbol as Ticker] ?? ""}</span>
+            <span className="text-[13px] text-text-3">{TICKER_NAMES[group.symbol as Ticker] ?? ""}</span>
             <Badge size="sm">Daily</Badge>
             <Badge size="sm" tone={meta.tone} dot={phase === "live"} pulse={phase === "live"}>
               {meta.label}
             </Badge>
           </div>
-          <p className="mt-1 text-[12px] text-text-3">
-            Close to close, settling {fmtSessionDate(group.sessionId)} at {fmtEtTime(group.settleTs)} ET.
-            <span className="hidden sm:inline"> Locks {fmtEtDateTime(group.lockTs)}.</span>
+          <p className="mt-1 text-[13px] text-text-2">
+            Close to close: from {fmtEtDateTime(group.lockTs)} to {fmtSessionDate(group.sessionId)} at{" "}
+            {fmtEtTime(group.settleTs)} ET. Three thresholds, three markets.
           </p>
         </div>
-        <div className="flex items-center gap-4 font-mono text-[10.5px] tabular text-text-3 shrink-0">
+        <div className="flex items-center gap-4 font-mono text-[12px] tabular text-text-3">
           <span>
             Pot <span className="text-text-1">{fmtUsdx(total, { compact: true })}</span> USDX
           </span>
@@ -64,9 +64,9 @@ export default function LadderGroup({
           )}
         </div>
       </header>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         {group.markets.map((m) => (
-          <MarketCard key={m.key} market={m} now={now} feed={feed} variant="rung" />
+          <MarketCard key={m.key} market={m} now={now} feed={feed} />
         ))}
       </div>
     </section>

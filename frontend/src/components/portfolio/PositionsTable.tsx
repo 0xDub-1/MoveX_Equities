@@ -373,7 +373,7 @@ export default function PositionsTable({
             <thead>
               <tr className="border-b border-line-1">
                 <Th className="pl-4 sm:pl-5">Market</Th>
-                <Th>Side</Th>
+                <Th>Answer</Th>
                 <Th className="text-right">Stake</Th>
                 <Th>Status</Th>
                 <Th className="w-[240px]">Standing</Th>
@@ -418,7 +418,7 @@ export default function PositionsTable({
                 <StatusBadge row={row} />
               </div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                <Field label="Side">
+                <Field label="Answer">
                   <SideTag side={row.position.side} />
                 </Field>
                 <Field label="Stake" align="right">

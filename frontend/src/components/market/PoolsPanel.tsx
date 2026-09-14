@@ -1,62 +1,45 @@
 "use client";
 
 // =============================================================================
-// 02 Pools
+// 02 The two answers
 // =============================================================================
 //
-// Where the money sits and what each side pays. The multiples are the
-// crowd's own odds, so a note reminds the reader they move with every deposit.
+// What each answer pays and how the pot is split between them. The numbers
+// are the crowd's own, so a note reminds the reader they move with every
+// deposit.
 
 import { QUOTE_SYMBOL } from "@/lib/config";
-import { fmtMultiple, fmtUsdx } from "@/lib/format";
-import { payoutMultiple, pot, type MarketView } from "@/lib/market";
-import { SectionHeader, Stat, Surface } from "@/components/ui/primitives";
-import PoolBar from "@/components/trading/PoolBar";
+import { fmtUsdx } from "@/lib/format";
+import { pot, type MarketView } from "@/lib/market";
+import { SectionHeader, Surface } from "@/components/ui/primitives";
+import SideSplit from "@/components/trading/SideSplit";
 
 import { feeLabel } from "./helpers";
 
 export default function PoolsPanel({ market }: { market: MarketView }) {
   const settled = market.state === "settled";
+  const total = pot(market);
 
   return (
     <Surface as="section">
-      <SectionHeader number="02" label="Pools" />
+      <SectionHeader
+        number="02"
+        label="The two answers"
+        trailing={
+          <span className="font-mono text-[12px] tabular text-text-3">
+            Pot <span className="text-text-1">{fmtUsdx(total)}</span> {QUOTE_SYMBOL}
+          </span>
+        }
+      />
 
-      <div className="px-4 sm:px-5 pt-5 pb-4">
-        <PoolBar market={market} size="md" highlight={settled ? market.winningSide : undefined} />
+      <div className="px-4 pb-4 pt-5 sm:px-5">
+        <SideSplit market={market} size="lg" highlight={settled ? market.winningSide : undefined} />
       </div>
 
-      <div className="grid grid-cols-3 gap-px border-t border-line-1 bg-line-1">
-        <div className="min-w-0 bg-surface-1 px-4 sm:px-5 py-3.5">
-          <Stat
-            label="ABOVE pays"
-            value={fmtMultiple(payoutMultiple(market, "above"))}
-            sub="if it wins"
-            valueClassName="font-mono text-above"
-          />
-        </div>
-        <div className="min-w-0 bg-surface-1 px-3 py-3.5">
-          <Stat
-            label="Pot"
-            value={fmtUsdx(pot(market))}
-            sub={`${QUOTE_SYMBOL} · ${feeLabel(market.feeBps)} fee`}
-            align="center"
-            valueClassName="font-mono"
-          />
-        </div>
-        <div className="min-w-0 bg-surface-1 px-4 sm:px-5 py-3.5">
-          <Stat
-            label="BELOW pays"
-            value={fmtMultiple(payoutMultiple(market, "below"))}
-            sub="if it wins"
-            align="right"
-            valueClassName="font-mono text-below"
-          />
-        </div>
-      </div>
-
-      <p className="border-t border-line-1 px-4 sm:px-5 py-3 text-[12px] text-text-3">
-        Backing the less popular side pays more. Multiples move as deposits arrive.
+      <p className="border-t border-line-1 px-4 py-3 text-[12.5px] text-text-3 sm:px-5">
+        The percentage is the share of the pot on that answer, which is the crowd&apos;s implied chance.
+        The winning answer splits the pot less the {feeLabel(market.feeBps)} fee, so the less popular
+        answer pays more. Both numbers move with every deposit.
       </p>
     </Surface>
   );

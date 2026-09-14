@@ -114,6 +114,8 @@ NVDA / FAIR / 1.55%
   BELOW   the stock moves 1.55% or LESS
 ```
 
+The interface phrases the same two pools as YES and NO answers to the market's question, "will NVDA move more than 1.55%?". ABOVE and BELOW are the program's names for them.
+
 ### The odds come from the crowd
 
 Payouts are not set by the protocol. They are a function of where the money sits.

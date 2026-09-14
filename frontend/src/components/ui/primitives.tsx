@@ -61,7 +61,7 @@ export function Eyebrow({
     <span
       className={cn(
         "font-mono font-medium uppercase text-text-3",
-        size === "sm" ? "text-[9.5px] tracking-[0.16em]" : "text-[10px] tracking-[0.18em]",
+        size === "sm" ? "text-[10.5px] tracking-[0.14em]" : "text-[11px] tracking-[0.16em]",
         className,
       )}
     >
@@ -130,7 +130,7 @@ export function Badge({
     <span
       className={cn(
         "inline-flex items-center gap-1.5 rounded-sm border font-mono font-medium uppercase whitespace-nowrap",
-        size === "sm" ? "h-5 px-1.5 text-[9px] tracking-[0.14em]" : "h-6 px-2 text-[10px] tracking-[0.14em]",
+        size === "sm" ? "h-5 px-1.5 text-[10px] tracking-[0.12em]" : "h-6 px-2 text-[11px] tracking-[0.12em]",
         TONE_CLASSES[tone],
         className,
       )}
@@ -169,7 +169,7 @@ export function SideTag({
     <span
       className={cn(
         "inline-flex items-center rounded-sm border font-mono font-semibold uppercase",
-        size === "sm" ? "h-5 px-1.5 text-[9px] tracking-[0.14em]" : "h-6 px-2 text-[10px] tracking-[0.14em]",
+        size === "sm" ? "h-5 px-1.5 text-[10px] tracking-[0.12em]" : "h-6 px-2 text-[11px] tracking-[0.12em]",
         muted ? "border-line-2 text-text-3 bg-transparent" : SIDE_CLASSES[side],
         className,
       )}
@@ -195,7 +195,7 @@ export function TierTag({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 h-6 px-2 rounded-sm border font-mono text-[10px] font-semibold tracking-[0.16em] uppercase",
+        "inline-flex items-center gap-1.5 h-6 px-2 rounded-sm border font-mono text-[11px] font-semibold tracking-[0.14em] uppercase",
         active ? "border-line-3 text-text-1 bg-white/[0.04]" : "border-line-1 text-text-3",
         className,
       )}

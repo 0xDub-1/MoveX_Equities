@@ -14,7 +14,16 @@ import { AnimatePresence, motion } from "framer-motion";
 
 import { fmtEtTime } from "@/lib/calendar";
 import { MIN_DEPOSIT_BASE, QUOTE_SYMBOL, SOL_FAUCET_URL } from "@/lib/config";
-import { fmtAgo, fmtBps, fmtMultiple, fmtPct, fmtUsdx, fmtUsdxSigned, toBase } from "@/lib/format";
+import {
+  fmtAgo,
+  fmtBps,
+  fmtChance,
+  fmtMultiple,
+  fmtPct,
+  fmtUsdx,
+  fmtUsdxSigned,
+  toBase,
+} from "@/lib/format";
 import {
   SIDE_META,
   claimAmount,
@@ -22,6 +31,7 @@ import {
   moveBps,
   payoutMultiple,
   poolOf,
+  poolShare,
   pot,
   sideAt,
   type MarketPhase,
@@ -111,7 +121,7 @@ function ConnectPrompt({ depositable }: { depositable: boolean }) {
     <div className="flex flex-col gap-4">
       <Note>
         {depositable
-          ? `Connect a wallet to put ${QUOTE_SYMBOL} on ABOVE or BELOW.`
+          ? `Connect a wallet to answer YES or NO with ${QUOTE_SYMBOL}.`
           : "Connect a wallet to see or claim your position on this market."}
       </Note>
       <div className="[&>button]:w-full [&>button]:justify-center">
@@ -224,14 +234,19 @@ function DepositForm({
   const payout = extra > 0n && multiple !== null ? BigInt(Math.floor(Number(extra) * multiple)) : null;
   const profit = payout !== null ? payout - extra : null;
 
+  const total = pot(market);
+
   return (
     <div className="flex flex-col gap-5">
       <div>
-        <Eyebrow>Side</Eyebrow>
-        <div className="mt-2 grid grid-cols-2 gap-2">
+        <p className="text-[14px] font-semibold leading-snug text-text-1">
+          Will {market.symbol} move more than <span className="font-mono tabular">{strike}</span>?
+        </p>
+        <div className="mt-2.5 grid grid-cols-2 gap-2">
           {SIDES.map((s) => {
             const selected = s === side;
             const disabled = locked !== undefined && s !== locked;
+            const chance = total > 0n ? poolShare(market, s) : null;
             return (
               <button
                 key={s}
@@ -240,29 +255,40 @@ function DepositForm({
                 aria-pressed={selected}
                 onClick={() => setChosen(s)}
                 className={cn(
-                  "flex min-w-0 flex-col items-start gap-1 rounded-md border px-3 py-3 text-left transition-colors",
+                  "flex min-w-0 flex-col items-start rounded-md border px-3 py-3 text-left transition-colors",
                   "disabled:cursor-not-allowed disabled:opacity-40",
-                  selected && s === "above" && "border-above/60 bg-above/10 text-above",
-                  selected && s === "below" && "border-below/60 bg-below/10 text-below",
-                  !selected && "border-line-2 text-text-2 hover:border-line-3 hover:bg-white/[0.04]",
+                  selected && s === "above" && "border-above/70 bg-above/10",
+                  selected && s === "below" && "border-below/70 bg-below/10",
+                  !selected && "border-line-2 hover:border-line-3 hover:bg-white/[0.04]",
                 )}
               >
-                <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em]">
-                  {SIDE_META[s].label}
+                <span className="flex w-full items-baseline justify-between gap-2">
+                  <span
+                    className={cn(
+                      "text-[14px] font-semibold tracking-[0.04em]",
+                      s === "above" ? "text-above" : "text-below",
+                      !selected && "opacity-80",
+                    )}
+                  >
+                    {SIDE_META[s].label}
+                  </span>
+                  <span className="font-mono text-[18px] font-semibold tabular text-text-1">
+                    {chance === null ? "--" : fmtChance(chance)}
+                  </span>
                 </span>
-                <span className={cn("text-[11.5px] leading-snug", selected ? "opacity-80" : "text-text-3")}>
+                <span className="mt-1 text-[12px] leading-snug text-text-2">
                   {s === "above" ? `Moves more than ${strike}` : `Stays within ${strike}`}
                 </span>
-                <span className="mt-1.5 font-mono text-[13px] font-semibold tabular">
-                  {fmtMultiple(payoutMultiple(market, s))}
+                <span className="mt-1.5 font-mono text-[12px] tabular text-text-3">
+                  pays <span className="text-text-1">{fmtMultiple(payoutMultiple(market, s))}</span>
                 </span>
               </button>
             );
           })}
         </div>
         {locked && (
-          <p className="mt-2 text-[11.5px] text-text-3">
-            Your position is on {SIDE_META[locked].label}. Withdraw it fully to switch sides.
+          <p className="mt-2 text-[12px] text-text-3">
+            Your position is on {SIDE_META[locked].label}. Withdraw it fully to switch answers.
           </p>
         )}
       </div>
@@ -329,9 +355,9 @@ function DepositForm({
         )}
       </div>
 
-      <dl className="flex flex-col gap-1.5 rounded-md border border-line-1 bg-white/[0.015] px-3.5 py-3 font-mono text-[11.5px] tabular">
-        <Row label="Side pool after deposit" value={`${fmtUsdx(sidePoolAfter)} ${QUOTE_SYMBOL}`} />
-        <Row label="Your share of the side" value={fmtPct(share)} />
+      <dl className="flex flex-col gap-1.5 rounded-md border border-line-1 bg-white/[0.015] px-3.5 py-3 font-mono text-[12px] tabular">
+        <Row label={`${label} pool after deposit`} value={`${fmtUsdx(sidePoolAfter)} ${QUOTE_SYMBOL}`} />
+        <Row label={`Your share of ${label}`} value={fmtPct(share)} />
         <Row
           label={`Payout if ${label} wins`}
           value={payout !== null ? `${fmtUsdx(payout)} ${QUOTE_SYMBOL}` : "--"}
@@ -441,9 +467,9 @@ function LiveBody({
   if (!lead) {
     sentence = "Waiting for a live price.";
   } else if (held) {
-    sentence = lead === held.side ? "Your side is leading." : "Your side is trailing.";
+    sentence = lead === held.side ? "Your answer is winning right now." : "Your answer is losing right now.";
   } else {
-    sentence = `${SIDE_META[lead].label} is leading.`;
+    sentence = `${SIDE_META[lead].label} is winning right now.`;
   }
   sentence +=
     phase === "awaiting-settle"
@@ -507,7 +533,7 @@ function SettledBody({
     return (
       <div className="rounded-md border border-line-2 px-4 py-4">
         <Note>
-          This position was on {SIDE_META[held.side].label}. {SIDE_META[winner].label} won.
+          You answered {SIDE_META[held.side].label}. {SIDE_META[winner].label} won.
         </Note>
         <div className="mt-3 flex items-center justify-between font-mono text-[12px] tabular">
           <span className="text-text-3">Stake</span>

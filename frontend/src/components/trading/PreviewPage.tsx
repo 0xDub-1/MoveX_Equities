@@ -10,11 +10,11 @@ import { groupMarkets } from "@/lib/groups";
 import { useNow } from "@/hooks/useNow";
 
 import { SectionHeader, Surface } from "@/components/ui/primitives";
-import HourlyStrip from "./HourlyStrip";
+import HourlySession from "./HourlySession";
 import LadderGroup from "./LadderGroup";
 import MoveGauge from "./MoveGauge";
-import PoolBar from "./PoolBar";
 import SamplesHistogram from "./SamplesHistogram";
+import SideSplit from "./SideSplit";
 import TickerStrip from "./TickerStrip";
 
 export default function PreviewPage() {
@@ -37,7 +37,7 @@ export default function PreviewPage() {
 
   return (
     <div className="max-w-[1400px] w-full mx-auto px-4 sm:px-6 py-6 flex flex-col gap-8">
-      <p className="font-mono text-[10px] tracking-[0.18em] uppercase text-warning">
+      <p className="font-mono text-[11px] tracking-[0.16em] uppercase text-warning">
         Preview on fixtures. Development only.
       </p>
 
@@ -86,7 +86,7 @@ export default function PreviewPage() {
           </div>
         </Surface>
         <Surface>
-          <SectionHeader number="04" label="Samples and pools" />
+          <SectionHeader number="04" label="Samples and the two answers" />
           <div className="p-5 flex flex-col gap-6">
             <SamplesHistogram
               samplesBps={nvdaFair.samplesBps}
@@ -94,7 +94,7 @@ export default function PreviewPage() {
               tier="fair"
               siblings={siblings("NVDA")}
             />
-            <PoolBar market={nvdaFair} />
+            <SideSplit market={nvdaFair} size="lg" />
           </div>
         </Surface>
       </div>
@@ -103,7 +103,7 @@ export default function PreviewPage() {
         g.kind === "daily" ? (
           <LadderGroup key={g.id} group={g} now={now} feed={feeds[g.symbol]} />
         ) : (
-          <HourlyStrip key={g.id} group={g} now={now} feed={feeds[g.symbol]} />
+          <HourlySession key={g.id} group={g} now={now} feed={feeds[g.symbol]} />
         ),
       )}
     </div>

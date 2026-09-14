@@ -22,10 +22,12 @@
   --line-2: rgba(255, 255, 255, 0.1);
   --line-3: rgba(255, 255, 255, 0.16);
 
+  /* Tuned for legibility on the near-black ground: secondary text stays
+     readable, tertiary is for decoration and disabled states only. */
   --text-1: #f4f5f7;
-  --text-2: #9ba1ad;
-  --text-3: #6b7280;
-  --text-4: #4b5563;
+  --text-2: #b3b9c4;
+  --text-3: #868d9a;
+  --text-4: #5f6673;
 
   --brand: #aecb31;
   --brand-soft: rgba(174, 203, 49, 0.1);

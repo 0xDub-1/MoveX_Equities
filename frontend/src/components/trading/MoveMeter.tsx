@@ -4,11 +4,11 @@
 // Move meter
 // =============================================================================
 //
-// The compact cousin of MoveGauge for cards and table rows: how far the
-// stock has moved, as a fraction of the threshold. The tick in the middle is
-// the threshold; a fill past it means ABOVE is winning.
+// How far the stock has moved, as a fraction of the threshold. The tick in
+// the middle is the threshold: a fill that reaches past it means YES is
+// winning, a fill short of it means NO is.
 
-import { fmtPct } from "@/lib/format";
+import { fmtBps, fmtPct } from "@/lib/format";
 import { moveBps, signedMovePct } from "@/lib/market";
 import { cn } from "@/lib/utils";
 
@@ -29,12 +29,21 @@ export default function MoveMeter({
   const bps = ready ? moveBps(reference, current) : 0;
   const signed = ready ? signedMovePct(reference, current) : 0;
   const above = ready && bps > strikeBps;
-  // The tick sits at the midpoint, so full width is twice the threshold.
+  // The tick sits at the midpoint, so the full width is twice the threshold.
   const fill = ready ? Math.min(100, (bps / (strikeBps * 2)) * 100) : 0;
 
   return (
-    <div className={cn("flex items-center gap-2.5 min-w-0", className)}>
-      <div className="relative h-1.5 flex-1 rounded-full bg-white/[0.06] overflow-visible">
+    <div className={cn("min-w-0", className)}>
+      {showLabel && (
+        <div className="mb-1.5 flex items-baseline justify-between gap-3 text-[12px]">
+          <span className="text-text-3">Moved so far</span>
+          <span className="font-mono tabular text-text-1">
+            {ready ? fmtPct(signed, { signed: true }) : "--"}
+            <span className="text-text-3"> of {fmtBps(strikeBps)}</span>
+          </span>
+        </div>
+      )}
+      <div className="relative h-2 rounded-full bg-white/[0.06]">
         <div
           className={cn(
             "absolute inset-y-0 left-0 rounded-full transition-[width,background-color] duration-500",
@@ -42,19 +51,11 @@ export default function MoveMeter({
           )}
           style={{ width: `${fill}%` }}
         />
-        <div className="absolute left-1/2 -top-1 h-[14px] w-px bg-white/50" />
+        <div
+          className="absolute left-1/2 -top-1 h-4 w-px bg-white/60"
+          title={`Threshold ${fmtBps(strikeBps)}`}
+        />
       </div>
-      {showLabel && (
-        <span
-          className={cn(
-            "font-mono text-[11px] tabular whitespace-nowrap",
-            !ready ? "text-text-4" : above ? "text-above" : "text-below",
-          )}
-        >
-          {ready ? fmtPct(signed, { signed: true }) : "--"}
-          <span className="text-text-4"> / {fmtPct(strikeBps / 100)}</span>
-        </span>
-      )}
     </div>
   );
 }

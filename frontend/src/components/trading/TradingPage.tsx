@@ -28,7 +28,7 @@ import {
   SegmentedControl,
   Skeleton,
 } from "@/components/ui/primitives";
-import HourlyStrip from "./HourlyStrip";
+import HourlySession from "./HourlySession";
 import HowItWorks from "./HowItWorks";
 import LadderGroup from "./LadderGroup";
 import TickerStrip from "./TickerStrip";
@@ -228,7 +228,7 @@ export default function TradingPage() {
             g.kind === "daily" ? (
               <LadderGroup key={g.id} group={g} now={now} feed={feeds.data?.[g.symbol]} />
             ) : (
-              <HourlyStrip key={g.id} group={g} now={now} feed={feeds.data?.[g.symbol]} />
+              <HourlySession key={g.id} group={g} now={now} feed={feeds.data?.[g.symbol]} />
             ),
           )}
         </div>

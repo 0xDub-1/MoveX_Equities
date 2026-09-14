@@ -16,7 +16,7 @@ import { fmtBps, fmtUsdx } from "@/lib/format";
 import { TIER_META, phaseOf, pot, type MarketView } from "@/lib/market";
 import { cn } from "@/lib/utils";
 import { SectionHeader, Surface, TierTag } from "@/components/ui/primitives";
-import PoolBar from "@/components/trading/PoolBar";
+import SideSplit from "@/components/trading/SideSplit";
 
 import PhaseBadge from "./PhaseBadge";
 
@@ -28,10 +28,10 @@ function RungCell({ market, current, now }: { market: MarketView; current: boole
         <TierTag tier={market.tier} active={current} />
         <PhaseBadge phase={phaseOf(market, now)} size="sm" />
       </div>
-      <p className="mt-3 font-mono text-[20px] font-semibold tabular tracking-tight text-text-1">
-        {fmtBps(market.strikeBps)}
+      <p className="mt-3 text-[13.5px] font-semibold text-text-1">
+        More than <span className="font-mono tabular">{fmtBps(market.strikeBps)}</span>?
       </p>
-      <PoolBar market={market} size="sm" showPayouts={false} className="mt-3" />
+      <SideSplit market={market} size="sm" amounts={false} className="mt-3" />
     </>
   );
   const classes = cn(

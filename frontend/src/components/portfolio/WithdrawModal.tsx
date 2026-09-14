@@ -86,7 +86,7 @@ export default function WithdrawModal({
       {row && (
         <div className="flex flex-col gap-4">
           <div className="grid grid-cols-2 gap-3 rounded-md border border-line-1 bg-surface-0/60 px-3.5 py-3">
-            <Stat label="Your side" value={<SideTag side={row.position.side} />} />
+            <Stat label="Your answer" value={<SideTag side={row.position.side} />} />
             <Stat label="Staked" value={`${fmtUsdx(stake)} USDX`} align="right" />
           </div>
 

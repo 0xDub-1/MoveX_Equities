@@ -208,11 +208,19 @@ export const TIERS: readonly Tier[] = ["tight", "fair", "wide"];
 
 export const TIER_META: Record<
   Tier,
-  { label: string; percentile: string; baseRate: number; question: string; note: string }
+  {
+    label: string;
+    percentile: string;
+    ordinal: string;
+    baseRate: number;
+    question: string;
+    note: string;
+  }
 > = {
   tight: {
     label: "TIGHT",
     percentile: "P25",
+    ordinal: "25th",
     baseRate: 75,
     question: "Does it move at all?",
     note: "Exceeded on about three sessions in four.",
@@ -220,6 +228,7 @@ export const TIER_META: Record<
   fair: {
     label: "FAIR",
     percentile: "P50",
+    ordinal: "50th",
     baseRate: 50,
     question: "Coin flip.",
     note: "Exceeded on about half of recent sessions.",
@@ -227,24 +236,42 @@ export const TIER_META: Record<
   wide: {
     label: "WIDE",
     percentile: "P75",
+    ordinal: "75th",
     baseRate: 25,
     question: "Is today a big one?",
     note: "Exceeded on about one session in four.",
   },
 };
 
-export const SIDE_META: Record<Side, { label: string; short: string; description: string }> = {
+/**
+ * How the two sides are spoken of in the interface.
+ *
+ * Every market is a yes or no question, "will it move more than this?", so
+ * the sides are YES and NO. The program calls them Above and Below; that
+ * name survives only as `chain`, for the details panel and the explorer.
+ */
+export const SIDE_META: Record<
+  Side,
+  { label: string; chain: string; short: string; description: string }
+> = {
   above: {
-    label: "ABOVE",
+    label: "YES",
+    chain: "ABOVE",
     short: "Moves more",
-    description: "The move exceeds the threshold, in either direction.",
+    description: "The stock moves more than the threshold, up or down.",
   },
   below: {
-    label: "BELOW",
+    label: "NO",
+    chain: "BELOW",
     short: "Stays within",
-    description: "The move is at or under the threshold. A tie resolves BELOW.",
+    description: "The stock stays within the threshold. An exact tie counts as NO.",
   },
 };
+
+/** How many of the stored samples cleared this market's threshold. */
+export function samplesCleared(m: MarketView): number {
+  return m.samplesBps.filter((s) => s > m.strikeBps).length;
+}
 
 // ---------------------------------------------------------------------------
 // Phase and timing

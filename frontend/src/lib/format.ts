@@ -109,19 +109,26 @@ export function shortKey(key: PublicKey | string, chars = 4): string {
   return `${s.slice(0, chars)}…${s.slice(-chars)}`;
 }
 
-/** `2H 14M 05S`, dropping leading zero units. Never negative. */
+/**
+ * A countdown at the precision that matters: `2d 4h`, `15h 10m`, `41m`,
+ * and seconds only inside the last ten minutes, `9m 46s`. Never negative.
+ */
 export function fmtCountdown(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
   const days = Math.floor(s / 86_400);
   const hours = Math.floor((s % 86_400) / 3_600);
   const mins = Math.floor((s % 3_600) / 60);
   const secs = s % 60;
-  const parts: string[] = [];
-  if (days > 0) parts.push(`${days}D`);
-  if (hours > 0 || days > 0) parts.push(`${hours}H`);
-  if (mins > 0 || hours > 0 || days > 0) parts.push(`${String(mins).padStart(2, "0")}M`);
-  parts.push(`${String(secs).padStart(2, "0")}S`);
-  return parts.join(" ");
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${String(mins).padStart(2, "0")}m`;
+  if (mins >= 10) return `${mins}m`;
+  if (mins > 0) return `${mins}m ${String(secs).padStart(2, "0")}s`;
+  return `${secs}s`;
+}
+
+/** A pool share as the crowd's implied chance: 0.57 becomes `57%`. */
+export function fmtChance(share: number): string {
+  return `${Math.round(share * 100)}%`;
 }
 
 /** Coarse duration for labels: `1h`, `24h`, `45m`, `2d`. */
