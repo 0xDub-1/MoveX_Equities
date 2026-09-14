@@ -5,6 +5,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda-nodejs';
 import { Runtime } from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Schedule, ScheduleExpression } from 'aws-cdk-lib/aws-scheduler';
 import { LambdaInvoke } from 'aws-cdk-lib/aws-scheduler-targets';
 
@@ -32,8 +33,32 @@ export class KeeperStack extends cdk.Stack {
   private lambdas: { [key: string]: lambda.NodejsFunction } = {};
   private schedules: { [key: string]: Schedule } = {};
 
-  /** SSM parameter holding the publisher's secret key. */
+  /** SSM parameter holding the publisher's secret key. Read at runtime. */
   private readonly keypairParameter = '/movex_equities/main_keypair';
+
+  /**
+   * The USDX mint markets are quoted in.
+   *
+   * Hardcoded because it is the one address in the system that cannot be
+   * derived: it came from a generated keypair rather than a seed. It is also
+   * public information, so there is nothing to protect by hiding it.
+   */
+  private readonly quoteMint = 'FBnaipfxQK8M3ZMMM3bwnzgbgKDLPGJ2rJdUANHocBve';
+
+  /**
+   * SSM parameter holding the RPC endpoint, read at synth rather than
+   * runtime.
+   *
+   * Not hardcoded, unlike the mint, because the Helius URL carries an API key
+   * and this repository is public. CDK emits a `{{resolve:ssm:...}}` dynamic
+   * reference, so the value appears neither in the repo nor in the
+   * synthesised template: CloudFormation substitutes it at deploy time.
+   *
+   * Create it once with:
+   *   aws ssm put-parameter --name /movex_equities/rpc_url --type String \
+   *     --value "https://devnet.helius-rpc.com/?api-key=..."
+   */
+  private readonly rpcUrlParameter = '/movex_equities/rpc_url';
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -48,16 +73,20 @@ export class KeeperStack extends cdk.Stack {
   // Lambdas
   // =========================================================================
 
+  /**
+   * Everything the lambdas need, resolved from the stack rather than from
+   * the shell. Nothing has to be exported before `cdk deploy`.
+   */
   private lambdaEnv(): Record<string, string> {
     return {
-      // Public devnet dropped blockhashes mid-run during setup, and a keeper
-      // that silently misses its minute is worse than one that costs a little.
-      RPC_URL: process.env.RPC_URL ?? 'https://api.devnet.solana.com',
+      // Resolved by CloudFormation at deploy time from SSM, so the API key
+      // it contains never lands in the repo or the template.
+      RPC_URL: ssm.StringParameter.valueForStringParameter(this, this.rpcUrlParameter),
       KEYPAIR_PARAMETER: this.keypairParameter,
-      // Not derivable: the USDX mint is a generated keypair, so unlike every
-      // other address the lambdas use it cannot be computed from a seed.
-      QUOTE_MINT: process.env.QUOTE_MINT ?? '',
-      TREASURY: process.env.TREASURY ?? '',
+      QUOTE_MINT: this.quoteMint,
+      // Empty means "the signing authority", which is what the handlers
+      // fall back to. A separate treasury is a mainnet concern.
+      TREASURY: '',
       POWERTOOLS_SERVICE_NAME: 'movex-equities-keeper',
     };
   }
