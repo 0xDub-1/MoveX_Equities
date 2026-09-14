@@ -20,14 +20,53 @@ export const QUOTE_MINT = new PublicKey(
   process.env.NEXT_PUBLIC_QUOTE_MINT ?? "FBnaipfxQK8M3ZMMM3bwnzgbgKDLPGJ2rJdUANHocBve",
 );
 
-/**
- * RPC endpoint. The public devnet endpoint works but rate limits
- * getProgramAccounts aggressively; a Helius devnet URL in .env.local is the
- * recommended setup.
- */
-export const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? "https://api.devnet.solana.com";
-
 export const CLUSTER = "devnet" as const;
+
+// ---------------------------------------------------------------------------
+// RPC
+// ---------------------------------------------------------------------------
+//
+// Two ways to reach the cluster, and which one is used depends on where the
+// endpoint is configured:
+//
+//   NEXT_PUBLIC_RPC_URL   the browser talks to it directly. Convenient
+//                         locally, but the value ships in the bundle, so
+//                         never point it at a URL carrying a key you care
+//                         about.
+//   RPC_URL               server only. The browser talks to /api/rpc and the
+//                         route handler forwards, so the key stays private.
+//                         This is what a deployment should use.
+//
+// With neither set, both paths end at the public devnet endpoint, which
+// needs no key but rate limits getProgramAccounts hard.
+
+const DIRECT_RPC = process.env.NEXT_PUBLIC_RPC_URL?.trim();
+
+export const PUBLIC_DEVNET_RPC = "https://api.devnet.solana.com";
+export const PUBLIC_DEVNET_WS = "wss://api.devnet.solana.com/";
+
+/** Where the browser sends JSON-RPC. */
+export function rpcEndpoint(): string {
+  if (DIRECT_RPC) return DIRECT_RPC;
+  // Same origin, so the proxy works on any deployment without being told
+  // its own URL. On the server nothing is fetched, so the value only has to
+  // be a legal URL.
+  if (typeof window !== "undefined") return `${window.location.origin}/api/rpc`;
+  return PUBLIC_DEVNET_RPC;
+}
+
+/**
+ * Where account subscriptions connect.
+ *
+ * A websocket cannot go through a route handler, so when the proxy is in use
+ * subscriptions talk to the cluster directly. That endpoint carries no key
+ * and only ever receives account addresses, which are public anyway. Left
+ * undefined for a direct endpoint, where web3.js derives the websocket URL
+ * from the HTTP one.
+ */
+export function wsEndpoint(): string | undefined {
+  return DIRECT_RPC ? undefined : PUBLIC_DEVNET_WS;
+}
 
 export const QUOTE_SYMBOL = "USDX";
 export const QUOTE_DECIMALS = 6;

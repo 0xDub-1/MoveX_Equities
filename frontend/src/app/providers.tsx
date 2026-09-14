@@ -18,13 +18,20 @@ import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
 import { SolflareWalletAdapter } from "@solana/wallet-adapter-solflare";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import { RPC_URL } from "@/lib/config";
+import { rpcEndpoint, wsEndpoint } from "@/lib/config";
 import { ProgramProvider } from "@/hooks/useProgram";
 
 import "@solana/wallet-adapter-react-ui/styles.css";
 
 export function Providers({ children }: { children: ReactNode }) {
   const wallets = useMemo(() => [new PhantomWalletAdapter(), new SolflareWalletAdapter()], []);
+
+  // Resolved once on the client, where the proxy's own origin is known.
+  const endpoint = useMemo(() => rpcEndpoint(), []);
+  const connectionConfig = useMemo(
+    () => ({ commitment: "confirmed" as const, wsEndpoint: wsEndpoint() }),
+    [],
+  );
 
   // One client per browser tab. Created lazily so the server never shares
   // a cache between requests.
@@ -42,7 +49,7 @@ export function Providers({ children }: { children: ReactNode }) {
   );
 
   return (
-    <ConnectionProvider endpoint={RPC_URL} config={{ commitment: "confirmed" }}>
+    <ConnectionProvider endpoint={endpoint} config={connectionConfig}>
       <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>
           <QueryClientProvider client={queryClient}>
