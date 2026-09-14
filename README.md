@@ -1,510 +1,480 @@
 # MoveX Equities
 
-**Trade how much a stock moves. Not which way.**
+Parimutuel volatility markets on US equities, settled on Solana.
 
-Daily volatility markets on US stocks, on Solana. Built for Stocklana.
+Each market resolves a single question: whether a stock's absolute price move over a fixed window exceeds a threshold. Direction is not measured. Participants deposit into one of two pools; the pool on the correct side of the threshold splits the pot pro rata.
 
----
-
-## The idea in one line
-
-Every trading day, for every ticker we list, there is one market and one
-question:
-
-> **How much will this stock move today?**
-
-You take a side. The session plays out. The side that was right splits the pot.
-
-Direction is irrelevant. A stock that drops 4% and one that rips 4% pay out
-identically. All that matters is distance travelled.
+**Program (devnet):** `9j2X63EpuSxBSqfMKNrcbQUFzzrXiU8ok2PbUYucZ8zL`
 
 ---
 
-## The problem
+## Contents
 
-Volatility is one of the most heavily traded things in traditional finance.
-Buying a straddle before a catalyst is a standard trade millions of people
-place every year. The view is simple and extremely common:
-
-> *"Something big is about to happen to this stock. I'm confident it moves
-> hard. I have no idea which direction."*
-
-Onchain, there is no way to express that view.
-
-Tokenized equities are arriving fast on Solana, and they give you exactly one
-lever: up or down. If you don't have a directional opinion, your options are
-to fake one you don't believe, or to sit the day out.
-
-The traditional answer is options, which asks a normal person to learn
-strikes, expiries, implied volatility and greeks before placing a single
-trade. Most people never climb that wall.
-
-MoveX Equities collapses all of it into one number anybody can reason about:
-
-> *NVDA moved 2.0% today. Was that more or less than 1.55%?*
+1. [Overview](#1-overview)
+2. [Market Mechanics](#2-market-mechanics)
+3. [Threshold Derivation](#3-threshold-derivation)
+4. [Instruments](#4-instruments)
+5. [Price Feed](#5-price-feed)
+6. [Architecture](#6-architecture)
+7. [Program Reference](#7-program-reference)
+8. [Keeper](#8-keeper)
+9. [Deployment](#9-deployment)
+10. [Development](#10-development)
+11. [Limitations](#11-limitations)
+12. [Repository Layout](#12-repository-layout)
 
 ---
 
-## How a market works
+## 1. Overview
 
-### Two pools, no order book
+### Motivation
 
-There is no matching engine and no counterparty to find. There are two pools,
-and you pick one.
+Tokenized equities on Solana expose a single dimension of exposure: long or short. A participant who expects a large move without a directional view has no instrument. In traditional markets that view is expressed through options, which require familiarity with strikes, expiries, implied volatility, and greeks.
 
-```
-NVDA · session 2026-09-16 · threshold 1.55%
+MoveX Equities reduces the volatility trade to one binary question per market:
 
-     ┌──────────────────────┐   ┌──────────────────────┐
-     │        ABOVE         │   │        BELOW         │
-     │  moves MORE than     │   │  moves LESS than     │
-     │  1.55%, either way   │   │  1.55%               │
-     └──────────────────────┘   └──────────────────────┘
-```
+> Did the stock move more than X% over the window, in either direction?
 
-The opposite pool **is** your counterparty, collectively.
+### Properties
 
-### The odds come from the crowd
-
-Nobody sets payouts. They fall out of where the money sits.
-
-```
-ABOVE   $70,000        If ABOVE wins:  100k / 70k = 1.43x
-BELOW   $30,000        If BELOW wins:  100k / 30k = 3.33x
-        ────────
-POT     $100,000
-```
-
-Backing the unpopular side pays more. Standard parimutuel mechanics.
-
-### The lifecycle
-
-```
-              deposits open                deposits close
-                    │                            │
-                    ▼                            ▼
-  init_market ──────────── deposit / withdraw ───── lock ──── settle ──── claim
-                                                     │          │
-                                                     │          │
-                                          reference price   settlement price
-                                          recorded          recorded, a side wins
-```
-
-Deposits close **on the timestamp**, enforced by the program itself. Nobody
-has to run anything for that to happen. `lock` and `settle` are separate
-permissionless instructions that read the oracle and move the market forward.
-
-### What cannot happen to you
-
-- You cannot lose more than you put in. No margin, no borrowing.
-- You cannot be liquidated. There is no position to margin call.
-- You cannot be wrong about direction. The product has no direction.
-- You cannot get stuck. Deposits are refundable right up until lock.
-
-The worst outcome available is losing the stake you chose. That is the whole
-risk surface, which also means no bad debt and no insurance fund.
+| Property | Guarantee |
+|---|---|
+| Maximum loss | The deposited stake. No margin, no leverage. |
+| Liquidation | None. There is no position to margin-call. |
+| Directional risk | None. Payout is a function of absolute move only. |
+| Exit before lock | Deposits are withdrawable until the lock timestamp. |
+| Counterparty | The opposing pool. No order matching. |
 
 ---
 
-## The threshold: computed, then verified on chain
+## 2. Market Mechanics
 
-This is the part that decides whether the product is serious or a coin flip
-with a logo. If a human picks the threshold, everything downstream is
-arbitrary.
+### Structure
 
-So no human picks it, and the program does not take our word for it either.
-
-### How it is derived
+A market consists of two pools, ABOVE and BELOW, a threshold in basis points, and two timestamps.
 
 ```
-1. Take the last 20 completed sessions.
-2. Measure how far the stock moved in each, ignoring direction.
-3. Sort those 20 numbers.
-4. Read off the quarter, half and three-quarter marks.
+Market: NVDA / 2026-09-16 / FAIR / 155 bps
+
+  ABOVE   |move| > 1.55%
+  BELOW   |move| <= 1.55%
 ```
 
-Real NVDA data, window ending 2026-09-11, in basis points:
+Payout odds are implied by pool sizes and are not set by the protocol.
 
 ```
-3  6  7  33  84 │ 91  98  99  148  151 │ 159  180  201  219  234 │ 237  291  321  457  874
-                ↑                      ↑                         ↑
-            P25 = 0.89%           P50 = 1.55%               P75 = 2.35%
+above_pool = 70,000    payout if ABOVE wins = 100,000 / 70,000 = 1.43x
+below_pool = 30,000    payout if BELOW wins = 100,000 / 30,000 = 3.33x
 ```
 
-Each rung carries its base rate **by construction**: P50 means exactly half of
-recent sessions moved more. It is arithmetic on a published series, not an
-estimate. A user can verify it by counting.
+### Lifecycle
 
-Note the 8.74% at the right edge. The median does not flinch at it. A mean or
-a standard deviation would have been dragged upward by that single session,
-which is why the ladder is built on quantiles.
+| State | Transition | Trigger |
+|---|---|---|
+| Open | Accepts `deposit` and `withdraw` while `now < lock_ts` | `init_market` |
+| Locked | Reference price recorded | `lock`, at or after `lock_ts` |
+| Settled | Settlement price recorded, winning side determined | `settle`, at or after `settle_ts` |
+| Voided | All deposits refundable in full, no fee | Empty pool at lock, or `void_market` after grace period |
 
-### The program checks the maths itself
+The deposit window closes on `lock_ts` by program check. No external action is required. The `lock` and `settle` instructions are permissionless.
 
-`init_market` receives a strike **and** the 20 samples it came from. It
-recomputes the percentile and **rejects the market unless they agree**.
+### Settlement
 
 ```
-P25 = (s[4]·25  + s[5]·75)  / 100
-P50 = (s[9]·50  + s[10]·50) / 100
-P75 = (s[14]·75 + s[15]·25) / 100
+move_bps      = |settlement_price - reference_price| * 10_000 / reference_price
+above_wins    = move_bps > strike_bps                  (tie resolves to BELOW)
+
+pot           = above_pool + below_pool
+fee           = pot * fee_bps / 10_000
+distributable = pot - fee
+payout(user)  = user.amount * distributable / winning_pool
 ```
 
-A percentile at `idx = p·(n-1)` over 20 samples always lands on a clean
-quarter, so the weights are exact hundredths and the whole computation stays
-in integers. No floating point enters the program, and the off-chain keeper
-reproduces it bit for bit.
-
-That is the difference between "trust our formula" and a constraint. **A
-keeper cannot publish a series and quote a strike that series does not
-produce**, by bug or by choice. The 20 samples live in the `Market` account,
-40 bytes, so anyone can recompute it.
-
-Tests cover a strike off by a single basis point and a correct P25 declared
-as the Fair tier. Both are rejected.
-
-### Why percentiles rather than standard deviations
-
-The conventional approach sets strikes as multiples of sigma, which assumes
-returns are normally distributed. Equity returns are not: they have fat tails,
-so a sigma ladder understates exactly the violent days that matter most to a
-volatility product. Reading empirical quantiles assumes nothing.
-
-### Earnings need no special handling
-
-A day where a company reports is simply a day where recent sessions were
-violent, so the threshold widens on its own. No separate earnings product, no
-manual intervention.
-
-That is the difference between something that works four days a year per
-ticker and something that works 252.
+Intermediate arithmetic is u128. Division truncates; the sum of payouts never exceeds `distributable`.
 
 ---
 
-## Two instruments, two calibrations
+## 3. Threshold Derivation
 
-### Daily: close to close
+### Method
 
-The product. Locks at one session's close, settles at the next.
+The threshold is an empirical percentile of the underlying's trailing absolute moves. No model, no forecast, no manual parameter.
 
-```
-close(D-1)  ──── overnight gap ──── full session D ──── close(D)
-    │                                                      │
-  reference                                            settlement
-```
+1. Take the 20 most recent completed windows.
+2. Compute the absolute move in each.
+3. Sort ascending.
+4. Read the percentile for the tier.
 
-**Measuring close to close rather than within the session is deliberate, and
-the data proves it matters.** From our own hourly bars for NVDA:
+| Tier | Percentile | Historical frequency of ABOVE |
+|---|---|---|
+| TIGHT | P25 | 75% |
+| FAIR | P50 | 50% |
+| WIDE | P75 | 25% |
 
-```
-15:30 Wed → 09:30 Thu     2.445%     ← overnight
-15:30 Thu → 09:30 Fri     1.474%     ← overnight
+Each tier's base rate holds by construction. Percentiles are used rather than standard deviations because equity returns are not normally distributed and a sigma-based ladder systematically underweights the tail.
 
-any single hour within a session    0.04% to 0.64%
-```
+### Example
 
-The overnight gap is larger than the entire trading session that follows it.
-A company reports after the bell, the stock gaps 8% at the open and drifts
-flat, and an intraday market would record a 0.4% move and pay out BELOW on the
-most volatile day of the quarter.
-
-Close to close also matches what everyone already means by "how much did it
-move today".
-
-### Hourly: within the session
-
-Intraday markets running hour to hour, so the full lifecycle is observable in
-minutes instead of two days. Six per session, whole hours from 10:00 ET:
+NVDA, daily close-to-close, 20 sessions ending 2026-09-11, basis points:
 
 ```
-10:00→11:00   11:00→12:00   12:00→13:00   13:00→14:00   14:00→15:00   15:00→16:00
+3  6  7  33  84  91  98  99  148  151  159  180  201  219  234  237  291  321  457  874
+
+P25 = 89    P50 = 155    P75 = 235
 ```
 
-The 6.5 hour session does not divide into whole hours, so half an hour is
-unused. We take it off the **open**, the noisiest stretch, so the last market
-settles exactly at the close, the most liquid moment of the day.
+### On-chain verification
 
-**They carry their own ladder, calibrated on hourly bars.** This is not
-optional. NVDA's hourly moves are genuinely small:
+`init_market` accepts both the threshold and the 20 samples it was derived from. The program recomputes the percentile and rejects the instruction if the values disagree.
+
+```
+P25 = (s[4]  * 25 + s[5]  * 75) / 100
+P50 = (s[9]  * 50 + s[10] * 50) / 100
+P75 = (s[14] * 75 + s[15] * 25) / 100
+```
+
+For n = 20 the interpolation index falls on an exact quarter for each tier, so the computation is integer-only and reproducible. The samples are stored in the `Market` account (40 bytes) and are publicly auditable.
+
+Consequence: a keeper cannot publish a sample series and a threshold that the series does not produce. What remains off-chain is the sourcing of the samples themselves.
+
+---
+
+## 4. Instruments
+
+Two instruments share the program and differ in window and calibration.
+
+### Daily
+
+| | |
+|---|---|
+| Window | Previous session close to current session close |
+| Reference | Official closing price, prior session |
+| Settlement | Official closing price, current session |
+| Deposit window | 24 hours, ending at the reference close |
+| Calibration | Trailing 20 daily close-to-close moves |
+| Tickers | NVDA (TIGHT, FAIR, WIDE), TSLA (FAIR), SPY (FAIR) |
+
+Close-to-close is used rather than open-to-close so that overnight gaps are included in the measurement. Observed NVDA data supports the choice:
+
+```
+Overnight, 15:30 to next 09:30      2.445%,  1.474%
+Any single regular-session hour      0.04% to 0.64%
+```
+
+An open-to-close market would record a flat session on a day the stock gapped materially at the open.
+
+### Hourly
+
+| | |
+|---|---|
+| Window | One hour, aligned to the clock, 10:00 to 16:00 ET |
+| Markets per session | 6 (3 on a 13:00 early close) |
+| Deposit window | From 09:00 ET until the market's lock time |
+| Calibration | Trailing 20 regular-session hourly moves |
+| Tickers | NVDA (FAIR) |
+
+Hourly markets are calibrated on hourly bars. The daily threshold is not reused: at 155 bps it would resolve BELOW in nearly every hour, leaving one pool empty.
 
 | | TIGHT | FAIR | WIDE |
 |---|---|---|---|
-| Daily (close to close) | 0.89% | 1.55% | 2.35% |
-| Hourly (within session) | 0.09% | **0.15%** | 0.33% |
+| Daily | 0.89% | 1.55% | 2.35% |
+| Hourly | 0.09% | 0.15% | 0.33% |
 
-A one-hour market carrying the daily 1.55% strike would settle BELOW nearly
-every time. Nobody would take ABOVE, and the market would void for want of a
-counterparty. At 0.15% it is a genuine coin flip, because that number **is**
-the median of NVDA's recent hours.
+Hourly calibration excludes extended-hours bars and any bar pair not exactly 3600 seconds apart, which removes overnight gaps and the partial bar at the close.
 
-Worth noting the ratio: hourly FAIR is a tenth of daily FAIR, not the ~0.4
-that scaling by the square root of time would predict. That gap is the same
-finding as above, in another form: most of the daily move happens with the
-market closed, so it is not available to be spread across the hours.
-
-Hourly markets are labelled as intraday in the UI and are a different
-instrument, not the product.
+Hourly markets are an intraday instrument and are presented separately from the daily product.
 
 ---
 
-## The price feed: ours, and we say so
+## 5. Price Feed
 
-### Why we built one
+### Production
 
-Pyth is the natural oracle here, and the program's production build reads it.
-But in **August 2026 Pyth moved its Hermes API behind a paid key**, with no
-free tier and the entry plan at $500/month. As a consequence, the sponsored
-equity feed accounts on devnet stopped being updated. When we checked them:
+The production build reads Pyth `PriceUpdateV2` accounts. Prices are normalized to a fixed exponent before use. Reads are rejected when the publish time exceeds `MAX_PRICE_AGE_SECS` (120) or the confidence interval exceeds 1% of price.
+
+### Devnet
+
+Pyth's Hermes API has required a paid key since August 2026. The sponsored equity feed accounts on devnet are no longer updated; at the time of writing they were 73 days stale. The devnet build therefore reads a `PriceFeed` account written by this project's keeper.
+
+The account mirrors the shape of a Pyth sponsored feed: one fixed address per underlying, continuously updated, read by both the program and the frontend. Selection between the two sources is a compile-time feature (`keeper-oracle`). The production build contains no instruction capable of writing a price.
 
 ```
-NVDA   198.37     73.4 days old
-TSLA   413.35     73.4 days old
-SPY    750.53     73.4 days old
+PriceFeed
+  publisher      Pubkey     only key permitted to write
+  price          u64        scaled by 10^-8
+  conf           u64        cross-source spread, same scale
+  publish_time   i64        source timestamp, not write time
+  source_count   u8
 ```
 
-Settling against those would have meant settling against a price from June.
+Write constraints:
 
-### What we do instead
+- Signer must equal `publisher`.
+- `publish_time` must be strictly greater than the stored value.
+- `conf` must not exceed `price / 100`.
 
-A `PriceFeed` account per ticker, written by our own keeper every minute
-during market hours. Deliberately shaped like a Pyth sponsored feed: one fixed
-address per underlying, updated continuously, read by the program and the
-frontend alike.
+The confidence check is applied again on read.
 
-That shape is the point. **The frontend reads prices from chain, not from a
-side API that could disagree with settlement**, and swapping back to Pyth
-changes one file.
+### Trust model
 
-```rust
-// oracle.rs
-#[cfg(feature = "keeper-oracle")]     fn read_price_inner(...)  // our feed
-#[cfg(not(feature = "keeper-oracle"))] fn read_price_inner(...)  // Pyth
-```
+On devnet, settlement prices are asserted by a single publisher operated by this project. The program enforces publisher identity, monotonic time, and a disagreement bound, but does not and cannot verify that the published price corresponds to the market. This is a known limitation and is stated in section 11.
 
-Both build shapes are kept green in CI. The production build **contains no
-instruction that can write a price**, and that is verified rather than
-asserted: `setMockPrice` and `updatePrice` are absent from its IDL.
+The threshold verification in section 3 is independent of the price source.
 
-### Being straight about what this costs
+### Settlement price selection
 
-**What the devnet oracle lacks against Pyth is not structure, it is
-publishers. There is one and it is us.** On devnet, settlement prices are ours
-to assert and nothing on chain proves them. That is a real weakness and we are
-not going to dress it up.
-
-Three things bound it:
-
-- Only the feed's declared publisher can write to it.
-- Prices must move **strictly forward in time**, so a stale update cannot be
-  replayed over a fresh one and roll the feed backwards.
-- A confidence bound, enforced on write and again on read, mirroring the check
-  the Pyth path applies to its interval.
-
-And one thing it does not touch: **the strike**. That is still recomputed on
-chain from its own published samples and owes the oracle nothing. The novel
-part of this project is verifiable regardless of where prices come from.
-
-### The price the market settles on
-
-`publish_time` is always **when the source produced the price**, never when it
-reached the chain. A price written a second ago carrying Friday's close is
-stale and reads as stale. That distinction is the entire staleness check.
-
-The crank sends `update_price` and `lock` in a **single transaction**, so the
-reference price is zero seconds old by construction rather than however long
-ago the publisher last ran. This is also how Pyth's pull oracle is meant to be
-used, so it moves toward the mainnet design rather than around it.
-
-Daily markets settle on the **official close**, set by the closing auction.
-Hourly markets settle on the last trade. Confusing the two would settle on a
-different definition than the strike was calibrated on.
+The keeper submits `update_price` and `lock` (or `settle`) in a single transaction, so the price consumed is the price just fetched. Daily markets settle on the official closing print; hourly markets settle on the last trade.
 
 ---
 
-## Architecture
+## 6. Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  keeper/          AWS CDK, four scheduled lambdas               │
-│                                                                 │
-│   Publisher      every minute   writes PriceFeed[NVDA|TSLA|SPY] │
-│   HourlyMarkets  09:00 ET       creates the session's markets   │
-│   DailyMarkets   15:55 ET       creates close-to-close markets  │
-│   Crank          every minute   lock / settle what is due       │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │  signs with a key from SSM
-                            ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  program/         Anchor, deployed to devnet                    │
-│                                                                 │
-│   Market    PDA ["market", ticker, session, tier]               │
-│   Position  PDA ["position", market, user]                      │
-│   Vault     PDA ["vault", market]    authority = market PDA     │
-│   PriceFeed PDA ["price_feed", ticker]                          │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │  read directly, no indexer
-                            ▼
-                        frontend
++--------------------------------------------------------------+
+| keeper/            AWS Lambda, EventBridge Scheduler          |
+|                                                              |
+|   Publisher        */1 min     update_price x 3 tickers      |
+|   HourlyMarkets    09:00 ET    init_market x 6               |
+|   DailyMarkets     15:55 ET    init_market x 5               |
+|   Crank            */1 min     lock / settle                 |
++---------------------------+----------------------------------+
+                            | signs with key from SSM Parameter Store
+                            v
++--------------------------------------------------------------+
+| program/           Anchor 1.2, Solana devnet                 |
+|                                                              |
+|   Market           ["market", ticker, session, tier]         |
+|   Position         ["position", market, user]                |
+|   Vault            ["vault", market]                         |
+|   PriceFeed        ["price_feed", ticker]                    |
+|   Faucet           ["faucet", mint]                          |
++---------------------------+----------------------------------+
+                            | direct account reads
+                            v
+                         frontend
 ```
 
-**The frontend reads chain state directly.** No backend index, no API in
-between. The data volume is tiny and every address is deterministic, so market
-state, pool sizes, the 20 samples behind each threshold and the live price all
-come from `getMultipleAccounts`. Nothing can be stale or disagree, and the
-program is not decorative.
+The frontend reads program accounts directly. There is no indexing layer. All addresses are derivable from ticker, session identifier, and tier.
+
+All schedules are declared in `America/New_York`. Market holidays and early closes are handled by a calendar module that refuses to answer for uncovered years rather than defaulting to a trading day.
+
+---
+
+## 7. Program Reference
+
+### Accounts
+
+```
+Market
+  authority          Pubkey
+  underlying         [u8; 8]       ASCII ticker, space-padded
+  session_date       [u8; 10]      session identifier
+  tier               Tier          Tight | Fair | Wide
+  pyth_feed          Pubkey        price account bound at creation
+  quote_mint         Pubkey
+  vault              Pubkey
+  strike_bps         u16
+  samples_bps        [u16; 20]     sorted ascending
+  state              MarketState   Open | Locked | Settled | Voided
+  reference_price    u64
+  settlement_price   u64
+  above_pool         u64
+  below_pool         u64
+  winning_side       Option<Side>
+  fee_bps            u16
+  treasury           Pubkey
+  fee_collected      bool
+  lock_ts            i64
+  settle_ts          i64
+
+Position
+  owner              Pubkey
+  market             Pubkey
+  side               Side          Above | Below
+  amount             u64
+  claimed            bool
+```
+
+One `Position` per user per market. The side may change only when the balance is zero.
 
 ### Instructions
 
-| | Who | What |
+| Instruction | Signer | Availability |
 |---|---|---|
-| `init_market` | admin | Creates a market with a strike verified against its samples |
-| `deposit` | user | Into ABOVE or BELOW, until lock |
-| `withdraw` | user | The escape hatch, until lock |
-| `lock` | **anyone** | Records the reference price |
-| `settle` | **anyone** | Records settlement, picks a side |
-| `claim` | user | Winner's pro-rata share, or a refund from a voided market |
-| `void_market` | **anyone** | Releases a market whose feed never recovered |
-| `collect_fee` | anyone | Pushes a settled market's fee to its treasury |
-| `init_faucet` `faucet_mint` | | devnet test token |
-| `init_price_feed` `update_price` | publisher | devnet oracle |
+| `init_market` | authority | Always |
+| `deposit` | user | `state == Open && now < lock_ts` |
+| `withdraw` | user | `state == Open && now < lock_ts` |
+| `lock` | any | `state == Open && now >= lock_ts` |
+| `settle` | any | `state == Locked && now >= settle_ts` |
+| `claim` | user | `state in (Settled, Voided)`, once per position |
+| `void_market` | any | `state in (Open, Locked) && now > settle_ts + 6h` |
+| `collect_fee` | any | `state == Settled`, once per market |
+| `init_faucet`, `faucet_mint` | | Feature `devnet-faucet` |
+| `init_price_feed`, `update_price` | publisher | Feature `keeper-oracle` |
 
-`lock` and `settle` being permissionless is load bearing. We run a keeper, but
-if it dies **anyone can crank a market forward with a short script**. The
-protocol never waits on us, which is also the honest answer to a
-centralisation question.
+### Edge case behaviour
 
-### Settlement maths
-
-```
-move_bps = |settlement - reference| × 10_000 / reference
-above_wins = move_bps > strike_bps        // an exact tie goes to BELOW
-
-pot           = above_pool + below_pool
-distributable = pot - pot × fee_bps / 10_000
-payout(user)  = user.amount × distributable / winning_pool
-```
-
-Every intermediate runs in u128. Integer division truncates, so the sum of
-payouts is always at or just under what is distributable: the few base units
-left behind are dust in the vault, which is the safe side to err on. The
-alternative is a last claimant finding it empty.
-
-### Edge cases, each with a test
-
-| Situation | Behaviour |
+| Condition | Result |
 |---|---|
-| One pool empty at lock | Market voids, everyone refunds in full |
-| Move exactly equals the strike | BELOW wins, stated in the docs and the UI |
-| Double claim | Rejected |
-| Oracle unreadable | `lock`/`settle` fail and can be retried, rather than killing the market |
-| Feed never recovers | `void_market` after 6 hours, full refund, no fee |
-| Claim on a voided market | Returns the original deposit, no fee taken |
+| One pool empty at `lock` | Market voided. Full refunds. |
+| `move_bps == strike_bps` | BELOW wins. |
+| Oracle stale or unreadable at `lock` or `settle` | Instruction fails. Retryable. Market state unchanged. |
+| Market unresolved 6 hours past `settle_ts` | `void_market` available to anyone. Full refunds, no fee. |
+| `claim` on voided market | Original deposit returned. |
+| Duplicate `claim` | Rejected. |
+
+### Constants
+
+| Constant | Value |
+|---|---|
+| `LOOKBACK_SESSIONS` | 20 |
+| `MAX_FEE_BPS` | 500 |
+| `MIN_DEPOSIT` | 1.000000 (6 decimals) |
+| `MAX_PRICE_AGE_SECS` | 120 |
+| `MAX_CONFIDENCE_RATIO` | 100 (1% of price) |
+| `VOID_GRACE_SECS` | 21,600 |
+| `KEEPER_PRICE_EXPONENT` | -8 |
 
 ---
 
-## Denomination and the faucet
+## 8. Keeper
 
-Markets are quoted in whatever SPL mint `init_market` is given. On devnet that
-is **USDX**, a valueless test token with a self-serve faucet: 10,000 per claim,
-24 hour cooldown.
+Four Lambda functions deployed with AWS CDK. Each is idempotent: it derives the set of accounts that should exist or be acted upon, reads their current state, and performs only the outstanding operations. A missed invocation is corrected by the next.
 
-The faucet PDA holds mint authority, so `faucet_mint` is the only path to
-supply. There is a test asserting the deployer, who created the mint, can no
-longer mint from it directly.
+| Function | Schedule | Responsibility |
+|---|---|---|
+| Publisher | Every minute, weekdays | Fetch quotes, write `PriceFeed` for each ticker |
+| HourlyMarkets | 09:00 ET, weekdays | Create the session's hourly markets |
+| DailyMarkets | 15:55 ET, weekdays | Create markets locking at the current close |
+| Crank | Every minute, weekdays | `lock` and `settle` due markets, bundling `update_price` |
 
-A faucet of our own rather than a dependency on an external one: judges may
-test at 3am on a Sunday, and a dry third-party faucet at that hour means
-nobody can trade at all.
+The signing key is read from SSM Parameter Store at cold start and cached for the container lifetime. IAM grants `ssm:GetParameter` on that single parameter ARN and nothing else.
 
-Dollar denomination costs no optionality. `quote_mint` is a field and wSOL is
-an SPL token, so SOL-denominated markets later need no program change. It also
-keeps the product legible: pools in a volatile asset would hand someone
-betting on NVDA volatility an unrelated SOL/USD exposure for two days.
+Quote source: Yahoo Finance chart API. Daily calibration uses `interval=1d`; hourly calibration uses `interval=1h` filtered to regular session hours. Settlement of daily markets uses the official close from the daily bar; hourly settlement uses the current price.
+
+The crank will not act more than 20 minutes after a market's scheduled time. Beyond that window the market is left to void.
 
 ---
 
-## Deployed on devnet
+## 9. Deployment
+
+### Devnet addresses
 
 ```
-Program      9j2X63EpuSxBSqfMKNrcbQUFzzrXiU8ok2PbUYucZ8zL
-USDX mint    FBnaipfxQK8M3ZMMM3bwnzgbgKDLPGJ2rJdUANHocBve
-Faucet       AR5q8xnQUeP9a9UcdjvXWAdaGxr8aFUBJuM1fPT8zfL9
+Program          9j2X63EpuSxBSqfMKNrcbQUFzzrXiU8ok2PbUYucZ8zL
+Quote mint       FBnaipfxQK8M3ZMMM3bwnzgbgKDLPGJ2rJdUANHocBve   (USDX, 6 decimals)
+Faucet           AR5q8xnQUeP9a9UcdjvXWAdaGxr8aFUBJuM1fPT8zfL9
 
-PriceFeed    NVDA  AGHVsmmpSPawAVjdt6Kz8wTHYgjdhWsEtbAJ4Z1EqT8c
-             TSLA  7MTEtbktfdVUNcXfkh1GqnHXz6WPd4iMRHHVFzmgSpsM
-             SPY   RNTbijEkEUfyYtaBuKHqxRve11RFsSzETw3du6Yz6tQ
+PriceFeed NVDA   AGHVsmmpSPawAVjdt6Kz8wTHYgjdhWsEtbAJ4Z1EqT8c
+PriceFeed TSLA   7MTEtbktfdVUNcXfkh1GqnHXz6WPd4iMRHHVFzmgSpsM
+PriceFeed SPY    RNTbijEkEUfyYtaBuKHqxRve11RFsSzETw3du6Yz6tQ
 ```
 
----
+### Test token
 
-## Running it
+USDX is a valueless SPL token. Mint authority is held by the faucet PDA; `faucet_mint` is the only path to supply. Allowance is 10,000 USDX per address per 24 hours.
+
+### Keeper prerequisites
+
+Two SSM parameters, type String:
+
+```
+/movex_equities/main_keypair    publisher secret key (base58 or JSON byte array)
+/movex_equities/rpc_url         Solana RPC endpoint
+```
+
+Then:
 
 ```bash
-# program: both build shapes are kept green
+cd keeper && npx cdk deploy
+```
+
+---
+
+## 10. Development
+
+### Program
+
+```bash
 cd program
-anchor build --arch v0 && cargo test                              # production, reads Pyth
-anchor build --arch v0 -- --features keeper-oracle,devnet-faucet  # devnet
+
+# Production build: Pyth oracle, no faucet
+anchor build --arch v0
+cargo test
+
+# Devnet build: keeper oracle and faucet
+anchor build --arch v0 -- --features keeper-oracle,devnet-faucet
 cargo test --features keeper-oracle,devnet-faucet
+```
 
-# keeper
+`--arch v0` is required. Anchor 1.2 defaults to SBPF v3, which litesvm 0.10 does not load.
+
+Tests execute on litesvm in-process. The full suite runs in under one second.
+
+### Keeper
+
+```bash
 cd keeper
-npm install && npm test
-npx tsx scripts/preflight.ts    # exercises the lambda code paths without deploying
-npm run strikes                 # prints live ladders and the series behind them
+npm install
+npm test
+npm run typecheck
+npm run strikes                  # print current ladders and sample series
+npx tsx scripts/preflight.ts     # exercise lambda code paths without deploying
 ```
 
-`--arch v0` is not optional: Anchor 1.2 defaults to `--arch v3` and litesvm's
-verifier rejects it, which surfaces as every test failing at `add_program`.
+### Test coverage
 
-Tests run on **litesvm**, in process, with no validator. The whole suite is
-under a second, which is what makes it worth running on every change.
-
-```
-program   53 tests    percentile verification, full lifecycle, payout maths, edge cases
-keeper    70 tests    ladders, trading calendar, window validation, IAM scoping
-```
+| Suite | Tests | Scope |
+|---|---|---|
+| Program, unit | 23 | Percentile verification, payout arithmetic, move calculation |
+| Program, deposit path | 10 | Market creation, deposit, withdraw, rejection cases |
+| Program, lifecycle | 14 | Lock, settle, claim, void, fee collection, tie resolution |
+| Program, faucet | 6 | Cooldown, per-user isolation, mint authority |
+| Keeper | 70 | Ladders, calendar, window validation, stack configuration |
 
 ---
 
-## Honest limitations
+## 11. Limitations
 
-Worth stating plainly rather than leaving to be discovered.
+**Devnet settlement prices are published by a single party.** The production build reads Pyth; the devnet build reads a feed written by this project's keeper. On devnet the program cannot verify that a published price corresponds to the market. See section 5.
 
-**Settlement prices on devnet are published by us.** Covered in full above.
-Mainnet reads Pyth through the same seam, and the production build already
-compiles that way.
+**Sample provenance is not verified on chain.** The program verifies that a threshold is the correct percentile of its samples. It does not verify that the samples are genuine market data.
 
-**The strike is computed off chain and verified on chain.** The program proves
-the strike matches its samples. It cannot prove the samples are real market
-data. Publishing a hash of the raw source response is the natural next step.
+**Hourly markets measure intraday movement.** They are calibrated separately and presented as a distinct instrument. The daily product measures close to close for the reasons given in section 4.
 
-**Hourly markets are intraday**, which is the measurement the daily product
-deliberately rejects. They exist so the lifecycle is observable in minutes,
-they carry their own calibration, and they are labelled as a separate
-instrument.
+**Single price source.** The `PriceFeed` account and program checks support multiple sources; the keeper currently publishes from one.
 
-**Single publisher, single source.** The `PriceFeed` account already carries a
-`conf` field and a `source_count`, and the program enforces a disagreement
-bound on both write and read. Wiring a second source is the smallest available
-improvement to the trust model.
-
-**Devnet only.** No mainnet deployment and no real funds at any point.
+**Devnet only.** No mainnet deployment. No real funds.
 
 ---
 
-## Repository
+## 12. Repository Layout
 
 ```
-docs/       product spec (EN and ES), public overview, execution roadmap
-program/    Anchor program, tests, devnet setup scripts
-keeper/     AWS CDK app: four lambdas, trading calendar, strike calibration
+docs/
+  PROJECT.en.md       product and protocol specification
+  PROJECT.es.md       Spanish translation
+  OVERVIEW.md         product summary
+  ROADMAP.md          execution plan, decisions, cut lines
+
+program/
+  programs/movex-equities/
+    src/
+      constants.rs
+      state.rs
+      strike.rs        percentile verification
+      oracle.rs        price reads, both sources
+      payout.rs        settlement arithmetic
+      instructions/
+    tests/             litesvm integration tests
+  scripts/             devnet setup and diagnostics
+
+keeper/
+  lib/
+    keeper-stack.ts    CDK stack
+    lambdas/
+      keeper/          publisher, market creation, crank
+      shared/          calendar, quotes, ladders, Solana client
+      strikes/         Phase 0 calibration pipeline
+  test/
 ```
-
-The roadmap in `docs/ROADMAP.md` includes the cut lines and risk register we
-worked to, including the two Phase 0 findings that shaped the product: that
-Pyth Benchmarks was unaffordable, and that measuring open to close makes
-earnings invisible.
-
----
-
-**MoveX Equities. Trade magnitude, not direction.**
