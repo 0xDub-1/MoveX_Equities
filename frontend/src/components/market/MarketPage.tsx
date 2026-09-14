@@ -46,7 +46,7 @@ function isAddress(value: string): boolean {
 function BackLink() {
   return (
     <Link
-      href="/"
+      href="/trading"
       className="inline-flex items-center gap-1 font-mono text-[11px] uppercase tracking-[0.14em] text-text-3 transition-colors hover:text-text-1"
     >
       <ChevronLeft size={13} />
@@ -58,7 +58,7 @@ function BackLink() {
 function BackButton() {
   return (
     <Link
-      href="/"
+      href="/trading"
       className="inline-flex h-10 items-center gap-1.5 rounded-md border border-line-2 bg-white/[0.04] px-4 text-[13px] font-semibold text-text-1 transition-colors hover:border-line-3 hover:bg-white/[0.07]"
     >
       <ChevronLeft size={14} />

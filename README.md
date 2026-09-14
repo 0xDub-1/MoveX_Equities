@@ -323,9 +323,9 @@ The keeper submits `update_price` and `lock` (or `settle`) in a single transacti
 +--------------------------------------------------------------+
 | frontend/          Next.js 16, wallet adapter, Anchor client |
 |                                                              |
-|   /                the board: prices, ladders, sessions      |
+|   /                portfolio: balances, faucet, positions    |
+|   /trading         the board: prices, ladders, sessions      |
 |   /market/[addr]   price against threshold, pools, deposit   |
-|   /portfolio       balances, faucet, positions, claims       |
 +--------------------------------------------------------------+
 ```
 

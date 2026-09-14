@@ -25,12 +25,14 @@ import { useFeedHealth } from "@/hooks/usePriceFeeds";
 import WalletButton from "./WalletButton";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Trading", icon: BarChart3 },
-  { href: "/portfolio", label: "Portfolio", icon: Wallet },
+  { href: "/", label: "Portfolio", icon: Wallet },
+  { href: "/trading", label: "Trading", icon: BarChart3 },
 ] as const;
 
 function isActive(pathname: string, href: string): boolean {
-  if (href === "/") return pathname === "/" || pathname.startsWith("/market");
+  if (href === "/") return pathname === "/";
+  // A market page belongs to the trading section.
+  if (href === "/trading") return pathname.startsWith("/trading") || pathname.startsWith("/market");
   return pathname.startsWith(href);
 }
 

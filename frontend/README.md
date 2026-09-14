@@ -26,9 +26,11 @@ Anything prefixed `NEXT_PUBLIC_` ships to the browser.
 
 | Route | What it shows |
 |---|---|
-| `/` | The board. Live oracle prices, then every market grouped into daily ladders and hourly sessions, filtered by Open, Live and Resolved. |
+| `/` | The portfolio, and the home page. Wallet balances, the USDX faucet, positions with withdraw and claim, realised results, and a shareable result card. Without a wallet, what the product is and how to start. |
+| `/trading` | The board. Live oracle prices, then every market grouped into daily ladders and hourly sessions, filtered by Open, Live and Resolved. |
 | `/market/[address]` | One market. The price against its threshold, the pools, the 20 samples the threshold came from, the timeline, and the deposit panel. |
-| `/portfolio` | Wallet balances, the USDX faucet, positions with withdraw and claim, realised results, and a shareable result card. |
+
+`/portfolio` redirects to `/`.
 
 ## Layout
 

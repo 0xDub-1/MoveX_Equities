@@ -316,7 +316,7 @@ function DepositForm({
         {noUsdx && (
           <p className="mt-2 text-[11.5px] text-text-3">
             No {QUOTE_SYMBOL} in this wallet.{" "}
-            <InlineLink href="/portfolio">Draw {QUOTE_SYMBOL} from the faucet</InlineLink>
+            <InlineLink href="/">Draw {QUOTE_SYMBOL} from the faucet</InlineLink>
           </p>
         )}
         {noSol && (

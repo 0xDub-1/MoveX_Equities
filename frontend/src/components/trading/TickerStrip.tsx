@@ -217,7 +217,7 @@ export default function TickerStrip({
 /** Kept for pages that want a plain link to the strip's ticker. */
 export function TickerLink({ symbol }: { symbol: string }) {
   return (
-    <Link href="/" className="font-display font-semibold text-text-1 hover:text-brand transition-colors">
+    <Link href="/trading" className="font-display font-semibold text-text-1 hover:text-brand transition-colors">
       {symbol}
     </Link>
   );

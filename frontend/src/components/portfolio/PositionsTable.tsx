@@ -358,7 +358,7 @@ export default function PositionsTable({
         body={empty.body}
         action={
           tab === "active" ? (
-            <LinkButton href="/" size="sm" variant="secondary">
+            <LinkButton href="/trading" size="sm" variant="secondary">
               Browse markets
             </LinkButton>
           ) : undefined

@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 
-import TradingPage from "@/components/trading/TradingPage";
+import PortfolioPage from "@/components/portfolio/PortfolioPage";
 
 export const metadata: Metadata = {
-  title: "Trading",
+  title: { absolute: "MoveX Equities · Portfolio" },
 };
 
+/** The home page: the connected wallet's balances, faucet and positions. */
 export default function Page() {
-  return <TradingPage />;
+  return <PortfolioPage />;
 }
