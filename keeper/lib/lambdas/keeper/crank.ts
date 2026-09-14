@@ -24,8 +24,8 @@ import {
   isTradingDay,
 } from "../shared/calendar";
 import { CRANK_GRACE_MINUTES, HOURLY_TICKER, PUBLISHED_TICKERS } from "../shared/config";
-import { marketPda, priceFeedPda } from "../shared/solana";
-import { getProgram } from "../shared/solana";
+import { bn, getProgram, marketPda, priceFeedPda } from "../shared/solana";
+import { liveQuote, officialClose } from "../shared/quotes";
 import type { Tier } from "../shared/markets";
 
 const logger = new Logger({ serviceName: "movex-equities-crank" });
@@ -121,6 +121,34 @@ export const handler = async () => {
         priceFeed: priceFeedPda(program.programId, spec.symbol),
       };
 
+      /**
+       * Publishes the price in the same transaction that consumes it.
+       *
+       * Without this the reference is whatever the publisher last wrote, up
+       * to a minute old, on top of however late the crank itself is. Bundling
+       * removes the feed-age term entirely: the price is zero seconds old by
+       * construction, leaving only the crank's own scheduling delay.
+       *
+       * It is also how Pyth's pull oracle is meant to be used, so this moves
+       * toward the mainnet design rather than away from it.
+       */
+      const withFreshPrice = async (quote: Awaited<ReturnType<typeof liveQuote>>) => [
+        await program.methods
+          .updatePrice(bn(quote.price), bn(quote.conf), bn(quote.publishTime), quote.sourceCount)
+          .accounts({
+            publisher: program.provider.publicKey!,
+            priceFeed: priceFeedPda(program.programId, spec.symbol),
+          })
+          .instruction(),
+      ];
+
+      // A daily market settles on the official close, which the auction sets
+      // and prints a little after the bell. An hourly one settles mid-session,
+      // where the last trade is the right number. Confusing the two would put
+      // settlement on a different definition than the strike was calibrated
+      // on, which is the mismatch Phase 0 exists to have caught.
+      const isDaily = spec.sessionId.length === 10;
+
       if (state === "open" && now >= lockTs) {
         // Past the grace window the reference price would be taken far enough
         // from the intended instant that it is no longer the price the market
@@ -129,16 +157,33 @@ export const handler = async () => {
           logger.warn("too late to lock, leaving it to void", { label, lockTs, now });
           continue;
         }
-        await program.methods.lock().accounts(common).rpc();
-        logger.info("locked", { label });
+        // The reference is always the live price: the deposit window just
+        // closed and the market starts measuring from here, whatever kind it
+        // is.
+        const quote = await liveQuote(spec.symbol);
+        await program.methods
+          .lock()
+          .accounts(common)
+          .preInstructions(await withFreshPrice(quote))
+          .rpc();
+        logger.info("locked", { label, price: quote.price.toString() });
         locked.push(label);
       } else if (state === "locked" && now >= settleTs) {
         if (now > settleTs + graceSecs) {
           logger.warn("too late to settle, leaving it to void", { label, settleTs, now });
           continue;
         }
-        await program.methods.settle().accounts(common).rpc();
-        logger.info("settled", { label });
+
+        const quote = isDaily
+          ? await officialClose(spec.symbol, spec.sessionId)
+          : await liveQuote(spec.symbol);
+
+        await program.methods
+          .settle()
+          .accounts(common)
+          .preInstructions(await withFreshPrice(quote))
+          .rpc();
+        logger.info("settled", { label, price: quote.price.toString(), isDaily });
         settled.push(label);
       }
     } catch (err) {

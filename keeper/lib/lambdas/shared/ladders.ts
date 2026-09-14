@@ -116,8 +116,15 @@ export function intradayMoves(
     const prev = bars[i - 1];
     const curr = bars[i];
 
+    // One rule instead of two. Requiring the pair to be exactly an hour
+    // apart excludes the overnight gap, and also the half-hour bar the
+    // source appends at 16:00, which would otherwise put a thirty minute
+    // move into a series of hourly ones. Anything irregular the source
+    // starts emitting is excluded by the same check.
+    if (Date.parse(curr.date) - Date.parse(prev.date) !== 3_600_000) continue;
+
     if (ET_DATE.format(new Date(prev.date)) !== ET_DATE.format(new Date(curr.date))) {
-      continue; // different sessions, so this pair spans the overnight gap
+      continue; // belt and braces: a same-length gap can never span sessions
     }
 
     if (!(prev.close > 0) || !(curr.close > 0)) {
