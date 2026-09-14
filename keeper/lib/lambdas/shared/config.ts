@@ -37,3 +37,13 @@ export const FEE_BPS = 100;
  * instant that voiding is the honest outcome.
  */
 export const CRANK_GRACE_MINUTES = 20;
+
+/**
+ * Matches `VOID_GRACE_SECS` in the program's constants.rs.
+ *
+ * Past this much time beyond its settle time a market can no longer resolve
+ * and the program lets anyone void it, refunding every deposit in full. The
+ * program enforces the bound; this copy only decides when the crank bothers
+ * to ask.
+ */
+export const VOID_GRACE_SECS = 6 * 60 * 60;

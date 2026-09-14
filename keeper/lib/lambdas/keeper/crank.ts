@@ -18,7 +18,7 @@ import { Logger } from "@aws-lambda-powertools/logger";
 import type { Program } from "@coral-xyz/anchor";
 
 import { CalendarCoverageError, easternDate, isTradingDay } from "../shared/calendar";
-import { CRANK_GRACE_MINUTES } from "../shared/config";
+import { CRANK_GRACE_MINUTES, VOID_GRACE_SECS } from "../shared/config";
 import { candidates } from "../shared/candidates";
 import { needsPriceUpdate } from "../shared/feed";
 import { bn, getProgram, marketPda, priceFeedPda } from "../shared/solana";
@@ -71,6 +71,7 @@ export const handler = async () => {
 
   const locked: string[] = [];
   const settled: string[] = [];
+  const voided: string[] = [];
   const failed: string[] = [];
 
   for (let i = 0; i < specs.length; i++) {
@@ -142,7 +143,21 @@ export const handler = async () => {
       // on, which is the mismatch Phase 0 exists to have caught.
       const isDaily = spec.sessionId.length === 10;
 
-      if (state === "open" && now >= lockTs) {
+      /**
+       * A market that ran out of time to resolve.
+       *
+       * `lock` and `settle` refuse rather than void when they cannot do
+       * their job, so a market whose moment passed sits unresolved holding
+       * deposits. The program allows anyone to release it once it is far
+       * enough past its settle time, but nothing was calling that, so those
+       * markets stayed on the board forever showing a state they could
+       * never leave. Everyone refunds in full and no fee is taken.
+       */
+      if ((state === "open" || state === "locked") && now > settleTs + VOID_GRACE_SECS) {
+        await program.methods.voidMarket().accounts({ cranker: common.cranker, market: common.market }).rpc();
+        logger.warn("voided, it could no longer resolve", { label, settleTs, now });
+        voided.push(label);
+      } else if (state === "open" && now >= lockTs) {
         // Past the grace window the reference price would be taken far enough
         // from the intended instant that it is no longer the price the market
         // was sold on. Leaving it to void is the honest outcome.
@@ -192,6 +207,6 @@ export const handler = async () => {
     }
   }
 
-  logger.info("crank result", { locked, settled, failed, checked: specs.length });
-  return { locked, settled, failed };
+  logger.info("crank result", { locked, settled, voided, failed, checked: specs.length });
+  return { locked, settled, voided, failed };
 };

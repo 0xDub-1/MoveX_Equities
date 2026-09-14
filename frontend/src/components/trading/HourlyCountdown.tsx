@@ -1,0 +1,73 @@
+"use client";
+
+// =============================================================================
+// Hourly countdown
+// =============================================================================
+//
+// One line saying how long until the intraday markets do something, so that
+// answer does not require reading the board. When there are none it counts
+// down to 15:55, when the next session's are posted.
+
+import { useMemo } from "react";
+import Link from "next/link";
+
+import { nextPostTs } from "@/lib/calendar";
+import type { MarketView } from "@/lib/market";
+import { nextEvent } from "@/lib/upcoming";
+
+import { Countdown, Eyebrow, Skeleton } from "@/components/ui/primitives";
+
+export default function HourlyCountdown({
+  markets,
+  now,
+}: {
+  markets: MarketView[];
+  now: number;
+}) {
+  const hourly = useMemo(() => markets.filter((m) => m.kind === "hourly"), [markets]);
+  const upcoming = useMemo(() => nextEvent(hourly, now), [hourly, now]);
+
+  const postTs = useMemo(() => {
+    if (!now) return null;
+    try {
+      return nextPostTs(new Date(now * 1000));
+    } catch {
+      // The calendar does not cover the year ahead.
+      return null;
+    }
+  }, [now]);
+
+  if (!now) return <Skeleton className="h-11" />;
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-line-2 bg-surface-1/70 px-4 py-3 sm:px-5">
+      <Eyebrow size="sm">Hourly</Eyebrow>
+      {upcoming ? (
+        <p className="text-[13.5px] text-text-2">
+          {upcoming.href ? (
+            <Link href={upcoming.href} className="font-medium text-text-1 hover:text-brand">
+              {upcoming.label}
+            </Link>
+          ) : (
+            <span className="font-medium text-text-1">{upcoming.label}</span>
+          )}{" "}
+          {upcoming.kind === "lock" ? "locks in" : "settles in"}{" "}
+          <span className="font-mono text-[14px] font-semibold tabular text-text-1">
+            <Countdown to={upcoming.ts} />
+          </span>
+        </p>
+      ) : postTs ? (
+        <p className="text-[13.5px] text-text-2">
+          The next session&apos;s hours post at 15:55 ET, in{" "}
+          <span className="font-mono text-[14px] font-semibold tabular text-brand">
+            <Countdown to={postTs} />
+          </span>
+        </p>
+      ) : (
+        <p className="text-[13.5px] text-text-2">
+          Intraday markets post at 15:55 ET for the following session.
+        </p>
+      )}
+    </div>
+  );
+}

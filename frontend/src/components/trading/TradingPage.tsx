@@ -25,7 +25,7 @@ import { Badge, Countdown, EmptyState, SegmentedControl, Skeleton } from "@/comp
 import HourlySession from "./HourlySession";
 import HowItWorks from "./HowItWorks";
 import LadderGroup from "./LadderGroup";
-import SessionTimeline from "./SessionTimeline";
+import HourlyCountdown from "./HourlyCountdown";
 
 type KindFilter = MarketKind | "all";
 
@@ -126,9 +126,9 @@ export default function TradingPage() {
       </div>
 
       {loading ? (
-        <Skeleton className="h-[112px]" />
+        <Skeleton className="h-11" />
       ) : (
-        <SessionTimeline markets={markets.data ?? []} now={now} />
+        <HourlyCountdown markets={markets.data ?? []} now={now} />
       )}
 
       <HowItWorks key={nothingAtAll ? "open" : "closed"} defaultOpen={nothingAtAll} />
