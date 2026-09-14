@@ -22,6 +22,7 @@ import {
   phaseOf,
   poolShare,
   pot,
+  refundableAt,
   samplesCleared,
   sideAt,
   signedMovePct,
@@ -122,6 +123,12 @@ function Clock({ market, phase }: { market: MarketView; phase: MarketPhase }) {
       return <span className="text-warning">Locking now</span>;
     case "awaiting-settle":
       return <span className="text-warning">Settling now</span>;
+    case "expired":
+      return (
+        <span className="text-loss">
+          Refunds in <Countdown to={refundableAt(market)} className="text-loss" done="moments" />
+        </span>
+      );
     case "settled":
       return <span>Settled {fmtEtTime(market.settleTs)} ET</span>;
     case "voided":
@@ -141,7 +148,7 @@ function Row({
   const phase = phaseOf(market, now);
   const meta = PHASE_META[phase];
   const live = phase === "live" || phase === "awaiting-settle";
-  const resolved = phase === "settled" || phase === "voided";
+  const resolved = phase === "settled" || phase === "voided" || phase === "expired";
   const open = phase === "deposits" || phase === "awaiting-lock";
 
   return (
@@ -198,6 +205,10 @@ function Row({
         <div className="lg:col-span-2">
           {phase === "settled" ? (
             <Outcome market={market} />
+          ) : phase === "expired" ? (
+            <span className="text-[13px] text-loss">
+              Missed its moment. Deposits refund in full.
+            </span>
           ) : (
             <span className="text-[13px] text-loss">Never settled. Deposits refund in full.</span>
           )}

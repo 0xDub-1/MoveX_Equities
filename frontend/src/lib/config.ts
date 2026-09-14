@@ -83,6 +83,17 @@ export const MIN_DEPOSIT_BASE = 1_000_000n;
 /** Matches VOID_GRACE_SECS in the program (six hours). */
 export const VOID_GRACE_SECS = 6 * 60 * 60;
 
+/**
+ * Matches CRANK_GRACE_MINUTES in the keeper.
+ *
+ * Past this much time beyond its moment the crank stops trying to lock or
+ * settle a market, because the price it would record is no longer the price
+ * the market was sold on. A market that passes this point can only be
+ * voided, so the board says so rather than showing it as about to lock
+ * forever.
+ */
+export const CRANK_GRACE_SECS = 20 * 60;
+
 /** Tickers the keeper publishes prices for, in display order. */
 export const TICKERS = ["NVDA", "TSLA", "SPY"] as const;
 export type Ticker = (typeof TICKERS)[number];

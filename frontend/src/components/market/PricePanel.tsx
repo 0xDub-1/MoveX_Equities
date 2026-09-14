@@ -87,6 +87,8 @@ function headline(
       if (!measured) return `Settled. ${winner} won.`;
       return `${market.symbol} moved ${fmtPct(signed, { signed: true })}, from ${fmtPrice(ref)} to ${fmtPrice(priceToNumber(market.settlementPrice))}, ${bps > market.strikeBps ? "past" : "within"} the ${strike} threshold. ${winner} won.`;
     }
+    case "expired":
+      return `No price arrived close enough to ${market.state === "open" ? "the lock" : "the settlement"} for this market to resolve against the number it was sold on. It cannot lock or settle now, so every deposit is refunded in full, with no fee taken.`;
     case "voided":
       return "This market was voided before it could settle. Every deposit is refunded in full.";
   }
@@ -121,6 +123,8 @@ export default function PricePanel({
         return market.winningSide ? `${SIDE_META[market.winningSide].label} won` : "Settled";
       case "voided":
         return "Voided";
+      case "expired":
+        return "Refund due";
       case "live":
       case "awaiting-settle":
         return leading ? `${SIDE_META[leading].label} winning` : "--";

@@ -26,9 +26,17 @@ export interface Kpis {
 
 export function computeKpis(rows: PositionRow[]): Kpis {
   const k: Kpis = { open: 0n, live: 0n, claimable: 0n, realized: 0n, resolved: 0 };
-  for (const { phase, position, claimable, pnl } of rows) {
-    if (phase === "deposits" || phase === "awaiting-lock") k.open += position.amount;
-    else if (phase === "live" || phase === "awaiting-settle") k.live += position.amount;
+  for (const { phase, market, position, claimable, pnl } of rows) {
+    // An expired market is counted by how far it got: one that never locked
+    // is still pre-measurement, one that locked was riding to a settlement
+    // that will not come. Either way the stake is somewhere, not nowhere.
+    const preMeasurement =
+      phase === "deposits" || phase === "awaiting-lock" || (phase === "expired" && market.state === "open");
+    const measuring =
+      phase === "live" || phase === "awaiting-settle" || (phase === "expired" && market.state === "locked");
+
+    if (preMeasurement) k.open += position.amount;
+    else if (measuring) k.live += position.amount;
     k.claimable += claimable;
     if (pnl !== null) {
       k.realized += pnl;

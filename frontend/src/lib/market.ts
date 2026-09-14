@@ -12,6 +12,7 @@
 import type { PublicKey } from "@solana/web3.js";
 import type { BN } from "@coral-xyz/anchor";
 
+import { CRANK_GRACE_SECS, VOID_GRACE_SECS } from "./config";
 import { bytesToString, type Tier } from "./pda";
 
 export type { Tier };
@@ -29,6 +30,8 @@ export type MarketPhase =
   | "awaiting-lock"
   | "live"
   | "awaiting-settle"
+  /** Missed its moment by too much to resolve. Refunds once anyone voids it. */
+  | "expired"
   | "settled"
   | "voided";
 
@@ -277,12 +280,23 @@ export function samplesCleared(m: MarketView): number {
 // Phase and timing
 // ---------------------------------------------------------------------------
 
+/**
+ * Where a market stands, from the wall clock rather than its stored state.
+ *
+ * Finer than the on-chain state in two ways. An Open market past its lock
+ * time is waiting on the crank, which is not the same as taking deposits.
+ * And once it is far enough past that the crank has given up, it can no
+ * longer lock at all: the only move left is a refund, so it stops claiming
+ * to be about to lock.
+ */
 export function phaseOf(m: MarketView, nowSec: number): MarketPhase {
   switch (m.state) {
     case "open":
-      return nowSec < m.lockTs ? "deposits" : "awaiting-lock";
+      if (nowSec < m.lockTs) return "deposits";
+      return nowSec > m.lockTs + CRANK_GRACE_SECS ? "expired" : "awaiting-lock";
     case "locked":
-      return nowSec < m.settleTs ? "live" : "awaiting-settle";
+      if (nowSec < m.settleTs) return "live";
+      return nowSec > m.settleTs + CRANK_GRACE_SECS ? "expired" : "awaiting-settle";
     case "settled":
       return "settled";
     case "voided":
@@ -295,9 +309,15 @@ export const PHASE_META: Record<MarketPhase, { label: string; tone: Tone }> = {
   "awaiting-lock": { label: "Locking", tone: "amber" },
   live: { label: "Live", tone: "sky" },
   "awaiting-settle": { label: "Settling", tone: "amber" },
+  expired: { label: "Expired", tone: "rose" },
   settled: { label: "Settled", tone: "neutral" },
   voided: { label: "Voided", tone: "rose" },
 };
+
+/** When a market that can no longer resolve becomes refundable to anyone. */
+export function refundableAt(m: MarketView): number {
+  return m.settleTs + VOID_GRACE_SECS;
+}
 
 export type Tone = "brand" | "sky" | "amber" | "rose" | "neutral";
 

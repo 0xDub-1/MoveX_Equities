@@ -146,6 +146,14 @@ function Standing({
     );
   }
 
+  if (phase === "expired") {
+    return (
+      <span className="text-[12.5px] text-loss">
+        Refund due, in full
+      </span>
+    );
+  }
+
   if (phase === "deposits" || phase === "awaiting-lock") {
     return (
       <span className="font-mono text-[12px] tabular text-text-1">

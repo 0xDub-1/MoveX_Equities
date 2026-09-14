@@ -9,6 +9,7 @@
 // the tags sit above it as context.
 
 import { fmtEtDateTime } from "@/lib/calendar";
+import { VOID_GRACE_SECS } from "@/lib/config";
 import { fmtBps } from "@/lib/format";
 import type { MarketPhase, MarketView } from "@/lib/market";
 import { Badge, Countdown, Eyebrow, SideTag, TierTag } from "@/components/ui/primitives";
@@ -82,6 +83,14 @@ function Clock({ market, phase }: { market: MarketView; phase: MarketPhase }) {
           }
           wide
           sub={fmtEtDateTime(market.settleTs)}
+        />
+      );
+    case "expired":
+      return (
+        <Readout
+          label="Refund"
+          value={<Countdown to={market.settleTs + VOID_GRACE_SECS} done="Open now" />}
+          sub="Could not resolve, refunded in full"
         />
       );
     case "voided":

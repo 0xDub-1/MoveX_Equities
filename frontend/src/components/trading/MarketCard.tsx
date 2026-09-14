@@ -21,6 +21,7 @@ import {
   payoutMultiple,
   phaseOf,
   pot,
+  refundableAt,
   samplesCleared,
   sideAt,
   signedMovePct,
@@ -100,6 +101,12 @@ function FooterClock({ market, phase }: { market: MarketView; phase: MarketPhase
       return <span className="text-warning">Locking now</span>;
     case "awaiting-settle":
       return <span className="text-warning">Settling now</span>;
+    case "expired":
+      return (
+        <span className="text-loss">
+          Refunds in <Countdown to={refundableAt(market)} className="text-loss" done="moments" />
+        </span>
+      );
     case "settled":
       return <span>Settled {fmtEtTime(market.settleTs)} ET</span>;
     case "voided":
@@ -180,6 +187,16 @@ export default function MarketCard({
           </>
         )}
         {phase === "settled" && <SettledBlock market={market} />}
+        {phase === "expired" && (
+          <div className="rounded-md border border-loss/25 bg-loss/[0.05] px-3.5 py-3">
+            <p className="text-[13px] font-semibold text-loss">Missed its moment</p>
+            <p className="mt-1 text-[12px] leading-relaxed text-text-2">
+              No price arrived close enough to{" "}
+              {market.state === "open" ? "the lock" : "settlement"}, so this market cannot resolve.
+              Every deposit is refunded in full, with no fee.
+            </p>
+          </div>
+        )}
         {phase === "voided" && (
           <div className="rounded-md border border-loss/30 bg-loss/[0.06] px-3.5 py-3 text-[12.5px] leading-relaxed text-loss">
             This market never settled. Every deposit is refunded in full.

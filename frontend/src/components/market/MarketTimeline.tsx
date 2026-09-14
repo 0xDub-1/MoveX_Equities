@@ -10,6 +10,7 @@
 import { Check, X } from "lucide-react";
 
 import { fmtEtDateTime } from "@/lib/calendar";
+import { VOID_GRACE_SECS } from "@/lib/config";
 import type { MarketPhase, MarketView } from "@/lib/market";
 import { cn } from "@/lib/utils";
 import { SectionHeader, Surface } from "@/components/ui/primitives";
@@ -28,13 +29,17 @@ const CURRENT: Record<MarketPhase, number> = {
   "awaiting-lock": 1,
   live: 2,
   "awaiting-settle": 2,
+  // The step it could not complete is behind it; the refund is what is left.
+  expired: 3,
   settled: 3,
   voided: 3,
 };
 
 function stepsOf(market: MarketView, phase: MarketPhase): Step[] {
   const current = CURRENT[phase];
-  const voided = phase === "voided";
+  // An expired market is on the same path as a voided one: it cannot
+  // resolve, and a refund is the only step left.
+  const voided = phase === "voided" || phase === "expired";
   const locked = market.referencePrice > 0n;
 
   const status = (i: number): Status => {
@@ -79,7 +84,7 @@ function stepsOf(market: MarketView, phase: MarketPhase): Step[] {
     voided
       ? {
           label: "Refund",
-          time: "Open now",
+          time: phase === "voided" ? "Open now" : fmtEtDateTime(market.settleTs + VOID_GRACE_SECS),
           detail: "every deposit refunded in full",
           status: status(3),
         }

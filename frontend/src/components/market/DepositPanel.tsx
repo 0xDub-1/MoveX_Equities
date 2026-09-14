@@ -12,8 +12,8 @@
 import { useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
-import { fmtEtTime } from "@/lib/calendar";
-import { MIN_DEPOSIT_BASE, QUOTE_SYMBOL, SOL_FAUCET_URL } from "@/lib/config";
+import { fmtEtDateTime, fmtEtTime } from "@/lib/calendar";
+import { MIN_DEPOSIT_BASE, QUOTE_SYMBOL, SOL_FAUCET_URL, VOID_GRACE_SECS } from "@/lib/config";
 import {
   fmtAgo,
   fmtBps,
@@ -602,6 +602,48 @@ function SettledBody({
   );
 }
 
+/**
+ * A market that missed its moment by too much to resolve.
+ *
+ * Nothing can be done here yet: deposits and withdrawals closed at the lock
+ * time, and the refund only opens once the market is far enough past its
+ * settle time for anyone to void it. So this says what happened, what is
+ * owed, and when.
+ */
+function ExpiredBody({ market, held }: { market: MarketView; held: PositionView | undefined }) {
+  const refundAt = market.settleTs + VOID_GRACE_SECS;
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="rounded-md border border-loss/25 bg-loss/[0.05] px-4 py-3.5">
+        <Eyebrow>Could not resolve</Eyebrow>
+        <p className="mt-2 text-[13px] leading-relaxed text-text-2">
+          No price arrived close enough to{" "}
+          {market.state === "open" ? "the lock" : "the settlement"} for this market to use the
+          number it was sold on. Every deposit is refunded in full, with no fee taken.
+        </p>
+      </div>
+
+      {held && (
+        <div className="rounded-md border border-line-2 px-4 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <Eyebrow>Your refund</Eyebrow>
+            <SideTag side={held.side} size="sm" muted />
+          </div>
+          <BigAmount amount={held.amount} />
+        </div>
+      )}
+
+      <div className="flex items-baseline justify-between gap-3 rounded-md border border-line-1 px-4 py-3 font-mono text-[12px] tabular">
+        <span className="text-text-3">Refund opens</span>
+        <span className="text-right text-text-1">
+          <Countdown to={refundAt} done="now" />
+          <span className="text-text-3"> · {fmtEtDateTime(refundAt)}</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function VoidedBody({
   market,
   held,
@@ -720,6 +762,9 @@ export default function DepositPanel({
       case "live":
       case "awaiting-settle":
         body = <LiveBody market={market} phase={phase} held={held} feed={feed} now={now} />;
+        break;
+      case "expired":
+        body = <ExpiredBody market={market} held={held} />;
         break;
       case "settled":
         body = <SettledBody market={market} held={held} actions={actions} />;

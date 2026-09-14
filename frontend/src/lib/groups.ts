@@ -78,6 +78,8 @@ export function tabOf(phase: MarketPhase): Tab {
     case "live":
     case "awaiting-settle":
       return "live";
+    // Expired sits with the resolved: there is nothing left to do but
+    // collect a refund, so it does not belong on a board of live markets.
     default:
       return "resolved";
   }

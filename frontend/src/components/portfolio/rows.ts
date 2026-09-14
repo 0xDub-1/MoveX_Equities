@@ -49,11 +49,17 @@ export const OUTCOME_META: Record<Outcome, { label: string; tone: Tone }> = {
   withdrawn: { label: "Withdrawn", tone: "neutral" },
 };
 
+/**
+ * Phases where the stake is still committed to a market that has not
+ * resolved. Expired belongs here: the market cannot settle, but the money is
+ * locked up until someone voids it, so hiding the row would lose it.
+ */
 const RUNNING: ReadonlySet<MarketPhase> = new Set<MarketPhase>([
   "deposits",
   "awaiting-lock",
   "live",
   "awaiting-settle",
+  "expired",
 ]);
 
 /**
