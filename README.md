@@ -413,7 +413,7 @@ Four Lambda functions deployed with AWS CDK. Each is idempotent: it derives the 
 |---|---|---|
 | Publisher | Every minute, weekdays | Fetch quotes, write `PriceFeed` for each ticker |
 | HourlyMarkets | 09:00 ET, weekdays | Create the session's hourly markets |
-| DailyMarkets | 15:55 ET, weekdays | Create the daily markets that lock at the current close |
+| DailyMarkets | 15:55 ET, weekdays | Create the daily markets that lock at the next session's close |
 | Crank | Every minute, weekdays | `lock` and `settle` due markets, bundling `update_price` |
 
 The signing key is read from SSM Parameter Store at cold start and cached for the container lifetime. IAM grants `ssm:GetParameter` on that single parameter ARN and nothing else.
