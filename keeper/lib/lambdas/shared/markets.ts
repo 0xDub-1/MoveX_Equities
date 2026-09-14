@@ -16,7 +16,7 @@ import type { Program } from "@coral-xyz/anchor";
 
 import { easternTimestamp, hourlySlots, closeMinutes } from "./calendar";
 import { FEE_BPS } from "./config";
-import { marketPda, priceFeedPda, sessionBytes, underlyingBytes, vaultPda, TIER_VARIANT } from "./solana";
+import { bn, marketPda, priceFeedPda, sessionBytes, underlyingBytes, vaultPda, TIER_VARIANT } from "./solana";
 
 const logger = new Logger({ serviceName: "movex-equities-markets" });
 
@@ -75,8 +75,9 @@ export async function ensureMarkets(
           samplesBps: spec.samplesBps,
           feeBps: FEE_BPS,
           treasury,
-          lockTs: spec.lockTs,
-          settleTs: spec.settleTs,
+          // i64 in the IDL, so BN rather than a native number.
+          lockTs: bn(spec.lockTs),
+          settleTs: bn(spec.settleTs),
         })
         .accounts({
           authority: program.provider.publicKey!,

@@ -6,7 +6,7 @@
 // four lambdas differ only in what they do with them.
 
 import { SSMClient, GetParameterCommand } from "@aws-sdk/client-ssm";
-import { AnchorProvider, Program, Wallet, type Idl } from "@coral-xyz/anchor";
+import { AnchorProvider, BN, Program, Wallet, type Idl } from "@coral-xyz/anchor";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 
@@ -164,6 +164,16 @@ export function vaultPda(programId: PublicKey, market: PublicKey): PublicKey {
     [Buffer.from("vault"), market.toBuffer()],
     programId,
   )[0];
+}
+
+/**
+ * Anchor's borsh coder wants BN for u64 and i64 arguments, not a native
+ * bigint or number. Passing the wrong one fails deep inside the layout
+ * encoder with `src.toArrayLike is not a function`, which names neither the
+ * argument nor the instruction, so every call site goes through here.
+ */
+export function bn(value: bigint | number): BN {
+  return new BN(value.toString());
 }
 
 /** Anchor's TS client camelCases what the IDL spells in snake_case. */

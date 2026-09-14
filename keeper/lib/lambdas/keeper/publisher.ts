@@ -22,7 +22,7 @@ import {
 } from "../shared/calendar";
 import { PUBLISHED_TICKERS } from "../shared/config";
 import { liveQuote } from "../shared/quotes";
-import { getProgram, priceFeedPda } from "../shared/solana";
+import { bn, getProgram, priceFeedPda } from "../shared/solana";
 
 const logger = new Logger({ serviceName: "movex-equities-publisher" });
 
@@ -94,9 +94,9 @@ export const handler = async (): Promise<{ published: string[]; skipped: string[
 
       await program.methods
         .updatePrice(
-          quote.price,
-          quote.conf,
-          quote.publishTime,
+          bn(quote.price),
+          bn(quote.conf),
+          bn(quote.publishTime),
           quote.sourceCount,
         )
         .accounts({

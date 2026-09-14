@@ -60,6 +60,41 @@ const ET_DATE = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 });
 
+const ET_CLOCK = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+function etMinutes(iso: string): number {
+  const parts = ET_CLOCK.formatToParts(new Date(iso));
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+  return hour * 60 + minute;
+}
+
+/**
+ * Keeps only bars from the regular session.
+ *
+ * The quote source returns pre-market and after-hours bars alongside the
+ * regular ones. Those barely move, and leaving them in dragged NVDA's hourly
+ * FAIR rung down to 0.12% against a daily 1.55%: eight percent of the daily
+ * figure where the square root of time says it should be near forty. A strike
+ * that small makes ABOVE win almost every hour, which is the same one-sided
+ * market the hourly ladder exists to prevent, arrived at from the other side.
+ */
+function regularSessionOnly(
+  bars: { date: string; close: number }[],
+): { date: string; close: number }[] {
+  const OPEN = 9 * 60 + 30;
+  const CLOSE = 16 * 60;
+  return bars.filter((bar) => {
+    const m = etMinutes(bar.date);
+    return m >= OPEN && m < CLOSE;
+  });
+}
+
 /**
  * Absolute hour-to-hour moves, computed only within a session.
  *
@@ -72,8 +107,9 @@ const ET_DATE = new Intl.DateTimeFormat("en-CA", {
  */
 export function intradayMoves(
   symbol: string,
-  bars: { date: string; close: number }[],
+  input: { date: string; close: number }[],
 ): number[] {
+  const bars = regularSessionOnly(input);
   const moves: number[] = [];
 
   for (let i = 1; i < bars.length; i++) {
