@@ -43,12 +43,11 @@ export interface TickerConfig {
 }
 
 /**
- * Seeding plan from the roadmap: NVDA carries the full three-rung ladder,
- * TSLA and SPY list FAIR only so liquidity is not spread across nine
- * markets on day one.
+ * Every ticker lists the full ladder. Liquidity is seeded across all rungs
+ * by the project's own accounts, so thin pools are not a concern.
  */
 export const TICKERS: readonly TickerConfig[] = [
   { symbol: "NVDA", rungs: ["tight", "fair", "wide"] },
-  { symbol: "TSLA", rungs: ["fair"] },
-  { symbol: "SPY", rungs: ["fair"] },
+  { symbol: "TSLA", rungs: ["tight", "fair", "wide"] },
+  { symbol: "SPY", rungs: ["tight", "fair", "wide"] },
 ];

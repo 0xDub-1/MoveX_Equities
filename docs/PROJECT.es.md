@@ -280,7 +280,7 @@ Los peldaños se añaden cuando los botes existentes superan un umbral de tamañ
 
 **Coste de implementación de la escalera: cero líneas extra.** El programa ya soporta N mercados. Cada peldaño es otra llamada a `init_market` con un strike distinto.
 
-Para la demo del hackathon corremos la escalera completa de tres peldaños en NVDA y un único mercado FAIR en TSLA y SPY, para que la liquidez se concentre y los ratios se vean sanos en pantalla.
+Cada ticker listado corre la escalera completa de tres peldaños. La liquidez en todos los peldaños la siembran cuentas que opera el proyecto, así que ningún bote queda vacío.
 
 ---
 
@@ -397,7 +397,7 @@ Es una restricción real de desarrollo. Tres mitigaciones, todas dentro del alca
 - Script keeper: calcula el strike de las últimas 20 sesiones, llama a `init_market`, y empuja `lock` y `settle`
 - Frontend reutilizando el design system existente de MoveX: lista de mercados, depósito, vista de posición, claim
 - Tarjeta de PnL compartible (portada desde la implementación existente de MoveX)
-- Tres tickers: NVDA (escalera completa), TSLA y SPY (solo FAIR)
+- Tres tickers, NVDA, TSLA y SPY, cada uno con la escalera completa
 
 ### Explícitamente fuera del alcance de la v1
 

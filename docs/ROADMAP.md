@@ -276,7 +276,7 @@ The standard here is not zero error. It is knowing the number and publishing it.
 - Extend `ComputeStrikesLambda` to call `init_market` for each listed rung. The strike half already runs on schedule; what it is missing is a program to call.
 - Add the second lambda, cranking `lock` and `settle` at 16:00 ET. Held back deliberately: a scheduled stub logging "not implemented" every weekday is noise pretending to be progress.
 - Move the holiday check into the handler. It does not matter yet, because on a holiday the provider returns no new session and the recomputed ladder is identical. It starts mattering the moment this opens markets.
-- Seed the markets: NVDA with the full three-rung ladder, TSLA and SPY with FAIR only.
+- Seed the markets: the full three-rung ladder on NVDA, TSLA and SPY.
 - Seed a parallel crypto market so there is always a live market to demo outside market hours.
 
 ### Exit criteria

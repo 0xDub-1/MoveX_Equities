@@ -21,18 +21,17 @@ import {
   nextTradingDay,
 } from "../shared/calendar";
 import { HOURLY_TICKER, PUBLISHED_TICKERS } from "../shared/config";
+import { TICKERS } from "../strikes/config";
 import { dailySpec, ensureMarkets, hourlySpecs, type MarketSpec, type Tier } from "../shared/markets";
 import { getProgram } from "../shared/solana";
 import { hourlyLadder, dailyLadder } from "../shared/ladders";
 
 const logger = new Logger({ serviceName: "movex-equities-markets" });
 
-/** Which rungs each ticker lists, matching the keeper's strike config. */
-const DAILY_RUNGS: Record<string, Tier[]> = {
-  NVDA: ["tight", "fair", "wide"],
-  TSLA: ["fair"],
-  SPY: ["fair"],
-};
+// One source of truth for which rungs each ticker lists: the strike config.
+const DAILY_RUNGS: Record<string, Tier[]> = Object.fromEntries(
+  TICKERS.map((t) => [t.symbol, [...t.rungs] as Tier[]]),
+);
 
 function quoteMint(): PublicKey {
   const value = process.env.QUOTE_MINT;

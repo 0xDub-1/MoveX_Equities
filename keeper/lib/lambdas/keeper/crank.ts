@@ -24,17 +24,17 @@ import {
   isTradingDay,
 } from "../shared/calendar";
 import { CRANK_GRACE_MINUTES, HOURLY_TICKER, PUBLISHED_TICKERS } from "../shared/config";
+import { TICKERS } from "../strikes/config";
 import { bn, getProgram, marketPda, priceFeedPda } from "../shared/solana";
 import { liveQuote, officialClose } from "../shared/quotes";
 import type { Tier } from "../shared/markets";
 
 const logger = new Logger({ serviceName: "movex-equities-crank" });
 
-const DAILY_RUNGS: Record<string, Tier[]> = {
-  NVDA: ["tight", "fair", "wide"],
-  TSLA: ["fair"],
-  SPY: ["fair"],
-};
+// One source of truth for which rungs each ticker lists: the strike config.
+const DAILY_RUNGS: Record<string, Tier[]> = Object.fromEntries(
+  TICKERS.map((t) => [t.symbol, [...t.rungs] as Tier[]]),
+);
 
 /** How many past sessions to look back for markets still needing a crank. */
 const LOOKBACK_DAYS = 4;

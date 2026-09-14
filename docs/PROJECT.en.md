@@ -279,7 +279,7 @@ Rungs are added when existing pools clear a size threshold, never on a whim. Per
 
 **Implementation cost of the ladder: zero extra lines.** The program already supports N markets. Each rung is another call to `init_market` with a different strike.
 
-For the hackathon demo we run the full three-rung ladder on NVDA and a single FAIR market on TSLA and SPY, so liquidity concentrates and the ratios look healthy on screen.
+Every listed ticker runs the full three-rung ladder. Liquidity across all rungs is seeded by accounts the project operates, so no pool is left thin.
 
 ---
 
@@ -396,7 +396,7 @@ This is a real development constraint. Three mitigations, all in scope:
 - Keeper script: computes the strike from the trailing 20 sessions, calls `init_market`, cranks `lock` and `settle`
 - Frontend reusing the existing MoveX design system: market list, deposit, position view, claim
 - Shareable PnL card (ported from the existing MoveX implementation)
-- Three tickers: NVDA (full ladder), TSLA and SPY (FAIR only)
+- Three tickers, NVDA, TSLA and SPY, each with the full ladder
 
 ### Explicitly out of scope for v1
 
