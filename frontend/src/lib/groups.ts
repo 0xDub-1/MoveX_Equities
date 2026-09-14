@@ -83,11 +83,25 @@ export function tabOf(phase: MarketPhase): Tab {
   }
 }
 
-/** Which tabs a group belongs to: any of its markets qualifies it. */
-export function groupTabs(group: MarketGroup, nowSec: number): Set<Tab> {
-  const tabs = new Set<Tab>();
-  for (const m of group.markets) tabs.add(tabOf(phaseOf(m, nowSec)));
-  return tabs;
+/**
+ * What a group currently holds, by tab, in display order.
+ *
+ * The board filters markets and then groups whatever survives, so a group
+ * can hold one hour or all six. This is how its header says which, instead
+ * of assuming the group is whole.
+ */
+export function groupSummary(group: MarketGroup, nowSec: number): { n: number; label: string }[] {
+  const counts: Record<Tab, number> = { open: 0, live: 0, resolved: 0 };
+  for (const m of group.markets) counts[tabOf(phaseOf(m, nowSec))]++;
+  return (
+    [
+      { n: counts.open, label: "open" },
+      { n: counts.live, label: "live" },
+      { n: counts.resolved, label: "settled" },
+    ] as const
+  )
+    .filter((part) => part.n > 0)
+    .map((part) => ({ ...part }));
 }
 
 /** The earliest time anything in the group changes state next. */

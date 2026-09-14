@@ -13,7 +13,7 @@ import { CalendarClock, Layers, RefreshCw } from "lucide-react";
 
 import { sessionStatus } from "@/lib/calendar";
 import { TICKERS, type Ticker } from "@/lib/config";
-import { groupMarkets, groupTabs, TAB_META, type MarketGroup, type Tab } from "@/lib/groups";
+import { groupMarkets, tabOf, TAB_META, type MarketGroup, type Tab } from "@/lib/groups";
 import { phaseOf, pot, type MarketKind } from "@/lib/market";
 import { fmtUsdx } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -47,21 +47,24 @@ export default function TradingPage() {
   const [ticker, setTicker] = useState<Ticker | "all">("all");
   const [kind, setKind] = useState<KindFilter>("all");
 
-  const groups = useMemo(() => groupMarkets(markets.data ?? []), [markets.data]);
+  // Every filter applies to markets, never to groups. A group is only the
+  // way matching markets are laid out, so a session with one settled hour
+  // shows that hour under Resolved rather than all six.
+  const selected = useMemo(() => {
+    if (!markets.data) return [];
+    return markets.data.filter(
+      (m) => (ticker === "all" || m.symbol === ticker) && (kind === "all" || m.kind === kind),
+    );
+  }, [markets.data, ticker, kind]);
 
-  // Per-tab counts, in markets rather than groups, so the numbers match what
-  // the chain holds.
+  // Counted after the ticker and kind filters, so each tab's number is what
+  // that tab will actually show.
   const counts = useMemo(() => {
     const c: Record<Tab, number> = { open: 0, live: 0, resolved: 0 };
     if (!now) return c;
-    for (const m of markets.data ?? []) {
-      const phase = phaseOf(m, now);
-      if (phase === "deposits" || phase === "awaiting-lock") c.open++;
-      else if (phase === "live" || phase === "awaiting-settle") c.live++;
-      else c.resolved++;
-    }
+    for (const m of selected) c[tabOf(phaseOf(m, now))]++;
     return c;
-  }, [markets.data, now]);
+  }, [selected, now]);
 
   const tab: Tab =
     chosenTab ??
@@ -69,12 +72,8 @@ export default function TradingPage() {
 
   const visible = useMemo(() => {
     if (!now) return [];
-    return groups
-      .filter((g) => groupTabs(g, now).has(tab))
-      .filter((g) => ticker === "all" || g.symbol === ticker)
-      .filter((g) => kind === "all" || g.kind === kind)
-      .sort(tabSorter(tab));
-  }, [groups, now, tab, ticker, kind]);
+    return groupMarkets(selected.filter((m) => tabOf(phaseOf(m, now)) === tab)).sort(tabSorter(tab));
+  }, [selected, now, tab]);
 
   // What the visible board adds up to, so the page says something at a glance.
   const totals = useMemo(() => {

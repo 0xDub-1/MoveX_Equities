@@ -12,7 +12,7 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
 import { fmtEtDayLong, fmtEtTime } from "@/lib/calendar";
-import type { MarketGroup } from "@/lib/groups";
+import { groupSummary, type MarketGroup } from "@/lib/groups";
 import { fmtBps, fmtChance, fmtMultiple, fmtPct, fmtUsdx } from "@/lib/format";
 import {
   PHASE_META,
@@ -231,9 +231,11 @@ export default function HourlySession({
   feed: PriceFeedView | undefined;
 }) {
   const lead = group.markets[0];
-  const phases = group.markets.map((m) => phaseOf(m, now));
-  const live = phases.filter((p) => p === "live" || p === "awaiting-settle").length;
-  const done = phases.filter((p) => p === "settled" || p === "voided").length;
+  const live = group.markets.filter((m) => {
+    const p = phaseOf(m, now);
+    return p === "live" || p === "awaiting-settle";
+  }).length;
+  const summary = groupSummary(group, now);
   const total = group.markets.reduce((sum, m) => sum + pot(m), 0n);
 
   return (
@@ -263,8 +265,12 @@ export default function HourlySession({
         }
         trailing={
           <span>
-            <span className="text-text-1">{group.markets.length - done}</span> to go ·{" "}
-            <span className="text-text-1">{done}</span> settled
+            {summary.map((part, i) => (
+              <span key={part.label}>
+                {i > 0 && <span className="text-text-4"> · </span>}
+                <span className="text-text-1">{part.n}</span> {part.label}
+              </span>
+            ))}
           </span>
         }
       />

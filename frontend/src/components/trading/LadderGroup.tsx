@@ -44,7 +44,9 @@ export default function LadderGroup({
         description={
           <>
             Close to close, from {fmtEtDateTime(group.lockTs)} to {fmtSessionDate(group.sessionId)} at{" "}
-            {fmtEtTime(group.settleTs)} ET. Three thresholds, three separate markets.
+            {fmtEtTime(group.settleTs)} ET.
+            {/* Only true when the filters have not taken a rung away. */}
+            {group.markets.length === 3 && " Three thresholds, three separate markets."}
           </>
         }
         trailing={
