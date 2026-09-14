@@ -17,63 +17,13 @@
 import { Logger } from "@aws-lambda-powertools/logger";
 import type { Program } from "@coral-xyz/anchor";
 
-import {
-  CalendarCoverageError,
-  easternDate,
-  hourlySlots,
-  isTradingDay,
-} from "../shared/calendar";
-import { CRANK_GRACE_MINUTES, HOURLY_TICKER, PUBLISHED_TICKERS } from "../shared/config";
-import { TICKERS } from "../strikes/config";
+import { CalendarCoverageError, easternDate, isTradingDay } from "../shared/calendar";
+import { CRANK_GRACE_MINUTES } from "../shared/config";
+import { candidates } from "../shared/candidates";
 import { bn, getProgram, marketPda, priceFeedPda } from "../shared/solana";
 import { liveQuote, officialClose } from "../shared/quotes";
-import type { Tier } from "../shared/markets";
 
 const logger = new Logger({ serviceName: "movex-equities-crank" });
-
-// One source of truth for which rungs each ticker lists: the strike config.
-const DAILY_RUNGS: Record<string, Tier[]> = Object.fromEntries(
-  TICKERS.map((t) => [t.symbol, [...t.rungs] as Tier[]]),
-);
-
-/** How many past sessions to look back for markets still needing a crank. */
-const LOOKBACK_DAYS = 4;
-
-interface Candidate {
-  symbol: string;
-  sessionId: string;
-  tier: Tier;
-}
-
-function candidates(today: string): Candidate[] {
-  const out: Candidate[] = [];
-
-  // Today's hourly slots. Cheap to include all of them: most will already be
-  // settled and get skipped on state.
-  try {
-    for (const slot of hourlySlots(today)) {
-      out.push({ symbol: HOURLY_TICKER, sessionId: slot.sessionId, tier: "fair" });
-    }
-  } catch {
-    // Not a trading day, so no hourly slots. Daily markets from previous
-    // sessions may still need settling, so this is not fatal.
-  }
-
-  // Daily markets are keyed by the date they settle, so looking back a few
-  // days catches anything a missed invocation left behind.
-  const cursor = new Date(`${today}T00:00:00Z`);
-  for (let i = 0; i <= LOOKBACK_DAYS; i++) {
-    const date = cursor.toISOString().slice(0, 10);
-    for (const symbol of PUBLISHED_TICKERS) {
-      for (const tier of DAILY_RUNGS[symbol] ?? ["fair"]) {
-        out.push({ symbol, sessionId: date, tier });
-      }
-    }
-    cursor.setUTCDate(cursor.getUTCDate() - 1);
-  }
-
-  return out;
-}
 
 export const handler = async () => {
   const today = easternDate();
