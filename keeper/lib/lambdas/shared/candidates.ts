@@ -47,9 +47,12 @@ export function candidates(today: string): Candidate[] {
   // to start one trading day ahead and walk backward. Starting at today would
   // never find a daily market on the day it needs locking, and it would sit
   // in Open until it voided six hours later.
+  // Two sessions ahead, not one: a daily market created at 15:55 today is
+  // keyed by the session after next, and the seeder funds it the same hour.
   const dates: string[] = [];
   try {
-    dates.push(nextTradingDay(today));
+    const next = nextTradingDay(today);
+    dates.push(nextTradingDay(next), next);
   } catch {
     // Calendar does not cover the year ahead. Past markets can still settle.
   }

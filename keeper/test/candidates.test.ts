@@ -37,3 +37,10 @@ describe('crank candidates', () => {
     expect(hourly[0].sessionId).toBe('0914-1000');
   });
 });
+
+describe('crank candidates, two sessions ahead', () => {
+  it('includes the session after next, so a market created at 15:55 is fundable the same hour', () => {
+    const ids = candidates('2026-09-14').filter((c) => c.sessionId.length === 10).map((c) => c.sessionId);
+    expect(ids).toContain('2026-09-16');
+  });
+});

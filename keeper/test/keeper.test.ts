@@ -11,7 +11,7 @@ beforeAll(() => {
 
 describe('lambdas', () => {
   it('creates one per responsibility, plus the strike report', () => {
-    template.resourceCountIs('AWS::Lambda::Function', 5);
+    template.resourceCountIs('AWS::Lambda::Function', 6);
   });
 
   it('runs on nodejs20 and does not retain logs forever', () => {
@@ -68,8 +68,8 @@ describe('permissions', () => {
 });
 
 describe('schedules', () => {
-  it('runs four of them', () => {
-    template.resourceCountIs('AWS::Scheduler::Schedule', 4);
+  it('runs five of them', () => {
+    template.resourceCountIs('AWS::Scheduler::Schedule', 5);
   });
 
   /**
@@ -80,7 +80,7 @@ describe('schedules', () => {
   it('declares New York time on every schedule, never UTC', () => {
     const schedules = template.findResources('AWS::Scheduler::Schedule');
     const entries = Object.values(schedules);
-    expect(entries).toHaveLength(4);
+    expect(entries).toHaveLength(5);
     for (const s of entries) {
       expect(s.Properties.ScheduleExpressionTimezone).toBe('America/New_York');
     }

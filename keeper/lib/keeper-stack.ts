@@ -12,20 +12,21 @@ import { LambdaInvoke } from 'aws-cdk-lib/aws-scheduler-targets';
 /**
  * MoveX Equities Keeper
  * ---------------------------------------------------------------------------
- * Four cron jobs, not a service. Each one has a single responsibility and its
+ * Five cron jobs, not a service. Each one has a single responsibility and its
  * own cadence, so a failure in one does not take the others down with it.
  *
  *   Publisher      every minute      writes each ticker's PriceFeed
  *   HourlyMarkets  09:00 ET          creates the session's intraday markets
- *   DailyMarkets   15:55 ET          creates tomorrow's close-to-close markets
+ *   DailyMarkets   15:55 ET          creates the next close-to-close markets
  *   Crank          every minute      locks and settles whatever is due
+ *   Seeder         every 10 min      funds both sides, claims winnings (devnet)
  *
  * Every schedule declares `America/New_York` rather than a UTC hour. US
  * market close is 16:00 ET, which is 20:00 UTC in summer and 21:00 in winter:
  * a UTC cron drifts an hour on the first Sunday of November and every
  * settlement after that reads the wrong price.
  *
- * All four are idempotent. They ask the chain what is missing rather than
+ * All five are idempotent. They ask the chain what is missing rather than
  * remembering what they did, so a missed invocation is repaired by the next.
  */
 export class KeeperStack extends cdk.Stack {
@@ -149,6 +150,16 @@ export class KeeperStack extends cdk.Stack {
       Duration.minutes(2),
     );
 
+    // Devnet only. Funds both sides of every open market from three derived
+    // wallets and claims their winnings, so markets resolve instead of voiding
+    // and the whole lifecycle runs against the chain daily.
+    this.lambdas["seeder"] = this.makeLambda(
+      "SeederLambda",
+      "lib/lambdas/keeper/seeder.ts",
+      "handler",
+      Duration.minutes(5),
+    );
+
     // The strike calibration report from Phase 0, kept as an on-demand tool
     // rather than a schedule: the market lambdas compute their own ladders.
     this.lambdas['computeStrikes'] = this.makeLambda(
@@ -188,7 +199,7 @@ export class KeeperStack extends cdk.Stack {
     // Stored as a String, not a SecureString, so no kms:Decrypt is needed.
     // If it is ever converted, this policy needs a matching kms:Decrypt on
     // the alias/aws/ssm key or every lambda starts failing at cold start.
-    for (const key of ['publisher', 'hourlyMarkets', 'dailyMarkets', 'crank']) {
+    for (const key of ['publisher', 'hourlyMarkets', 'dailyMarkets', 'crank', 'seeder']) {
       this.lambdas[key].addToRolePolicy(policy);
     }
   }
@@ -251,6 +262,16 @@ export class KeeperStack extends cdk.Stack {
       'dailyMarkets',
       ScheduleExpression.cron({ minute: '55', hour: '15', weekDay: 'MON-FRI', timeZone: ny }),
       'Create the close-to-close markets that lock at today\'s close',
+    );
+
+    // Every ten minutes through the session. Markets appear at 09:00 and
+    // 15:55; the next tick funds them, and later ticks are no-ops for any
+    // market the wallets already hold positions in.
+    this.schedule(
+      'SeederSchedule',
+      'seeder',
+      ScheduleExpression.cron({ minute: '*/10', hour: '9-16', weekDay: 'MON-FRI', timeZone: ny }),
+      'Fund both sides of open markets and claim seed-wallet winnings',
     );
   }
 

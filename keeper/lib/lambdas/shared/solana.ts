@@ -182,3 +182,26 @@ export const TIER_VARIANT = {
   fair: { Fair: {} },
   wide: { Wide: {} },
 } as const;
+
+export function positionPda(programId: PublicKey, market: PublicKey, user: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("position"), market.toBuffer(), user.toBuffer()],
+    programId,
+  )[0];
+}
+
+export function faucetPda(programId: PublicKey, mint: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync([Buffer.from("faucet"), mint.toBuffer()], programId)[0];
+}
+
+export function faucetClaimPda(programId: PublicKey, mint: PublicKey, user: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("faucet_claim"), mint.toBuffer(), user.toBuffer()],
+    programId,
+  )[0];
+}
+
+export const SIDE_VARIANT = {
+  above: { Above: {} },
+  below: { Below: {} },
+} as const;

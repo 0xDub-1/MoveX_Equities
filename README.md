@@ -305,6 +305,7 @@ The keeper submits `update_price` and `lock` (or `settle`) in a single transacti
 |   HourlyMarkets    09:00 ET    init_market x 6               |
 |   DailyMarkets     15:55 ET    init_market x 9               |
 |   Crank            */1 min     lock / settle                 |
+|   Seeder           */10 min    fund both sides, claim wins   |
 +---------------------------+----------------------------------+
                             | signs with key from SSM Parameter Store
                             v
@@ -407,7 +408,7 @@ One `Position` per user per market. The side can change only while the balance i
 
 ## 9. Keeper
 
-Four Lambda functions deployed with AWS CDK. Each is idempotent: it derives the set of accounts that should exist or be acted on, reads their current state, and performs only what is outstanding. A missed invocation is corrected by the next one.
+Five Lambda functions deployed with AWS CDK. Each is idempotent: it derives the set of accounts that should exist or be acted on, reads their current state, and performs only what is outstanding. A missed invocation is corrected by the next one.
 
 | Function | Schedule | Responsibility |
 |---|---|---|
@@ -415,6 +416,7 @@ Four Lambda functions deployed with AWS CDK. Each is idempotent: it derives the 
 | HourlyMarkets | 09:00 ET, weekdays | Create the session's hourly markets |
 | DailyMarkets | 15:55 ET, weekdays | Create the daily markets that lock at the next session's close |
 | Crank | Every minute, weekdays | `lock` and `settle` due markets, bundling `update_price` |
+| Seeder | Every 10 minutes, weekdays | Devnet only. Funds both sides of open markets from three derived wallets and claims their winnings |
 
 The signing key is read from SSM Parameter Store at cold start and cached for the container lifetime. IAM grants `ssm:GetParameter` on that single parameter ARN and nothing else.
 
