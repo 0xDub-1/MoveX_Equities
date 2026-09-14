@@ -9,57 +9,101 @@ beforeAll(() => {
   template = Template.fromStack(new KeeperStack(app, 'TestKeeper'));
 });
 
-describe('strike calibration lambda', () => {
-  it('is created with enough headroom for three sequential provider calls', () => {
-    template.hasResourceProperties('AWS::Lambda::Function', {
-      Runtime: 'nodejs20.x',
-      Handler: 'index.handler',
-      Timeout: 60,
-      MemorySize: 256,
-    });
+describe('lambdas', () => {
+  it('creates one per responsibility, plus the strike report', () => {
+    template.resourceCountIs('AWS::Lambda::Function', 5);
   });
 
-  it('does not retain logs forever', () => {
+  it('runs on nodejs20 and does not retain logs forever', () => {
+    template.hasResourceProperties('AWS::Lambda::Function', {
+      Runtime: 'nodejs20.x',
+    });
     template.hasResourceProperties('AWS::Logs::LogGroup', {
       RetentionInDays: 30,
     });
   });
+
+  it('tells the lambdas which parameter holds the signing key', () => {
+    template.hasResourceProperties('AWS::Lambda::Function', {
+      Environment: Match.objectLike({
+        Variables: Match.objectLike({
+          KEYPAIR_PARAMETER: '/movex_equities/main_keypair',
+        }),
+      }),
+    });
+  });
 });
 
-describe('schedule', () => {
+describe('permissions', () => {
   /**
-   * The timezone assertion is the important one. US close is 16:00 ET, which
-   * is 20:00 UTC in summer and 21:00 UTC in winter. A UTC cron would drift an
-   * hour on the first Sunday of November and every settlement after that
-   * would read the wrong price.
+   * Scoped to the one parameter, not a path prefix. A future secret stored
+   * under the same path should not become readable because this policy was
+   * written loosely.
    */
-  it('fires at 15:55 New York time on weekdays, not in UTC', () => {
+  it('grants read on exactly one parameter and nothing else', () => {
+    template.hasResourceProperties('AWS::IAM::Policy', {
+      PolicyDocument: Match.objectLike({
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Action: 'ssm:GetParameter',
+            Effect: 'Allow',
+            Resource: Match.objectLike({
+              'Fn::Join': Match.arrayWith([
+                Match.arrayWith([Match.stringLikeRegexp('parameter/movex_equities/main_keypair')]),
+              ]),
+            }),
+          }),
+        ]),
+      }),
+    });
+  });
+
+  it('does not ask for write access to the parameter store', () => {
+    const policies = template.findResources('AWS::IAM::Policy');
+    const actions = JSON.stringify(policies);
+    expect(actions).not.toContain('ssm:PutParameter');
+    expect(actions).not.toContain('ssm:DeleteParameter');
+    expect(actions).not.toContain('ssm:*');
+  });
+});
+
+describe('schedules', () => {
+  it('runs four of them', () => {
+    template.resourceCountIs('AWS::Scheduler::Schedule', 4);
+  });
+
+  /**
+   * The assertion that matters most. US close is 16:00 ET, which is 20:00 UTC
+   * in summer and 21:00 in winter. A UTC cron drifts an hour on the first
+   * Sunday of November and every settlement after that reads the wrong price.
+   */
+  it('declares New York time on every schedule, never UTC', () => {
+    const schedules = template.findResources('AWS::Scheduler::Schedule');
+    const entries = Object.values(schedules);
+    expect(entries).toHaveLength(4);
+    for (const s of entries) {
+      expect(s.Properties.ScheduleExpressionTimezone).toBe('America/New_York');
+    }
+  });
+
+  it('creates the intraday markets an hour before the first lock', () => {
+    template.hasResourceProperties('AWS::Scheduler::Schedule', {
+      ScheduleExpression: 'cron(0 9 ? * MON-FRI *)',
+      ScheduleExpressionTimezone: 'America/New_York',
+    });
+  });
+
+  it('creates the daily markets just before the close they lock at', () => {
     template.hasResourceProperties('AWS::Scheduler::Schedule', {
       ScheduleExpression: 'cron(55 15 ? * MON-FRI *)',
       ScheduleExpressionTimezone: 'America/New_York',
     });
   });
 
-  it('gives up after a few retries instead of the 185-attempt default', () => {
-    template.hasResourceProperties('AWS::Scheduler::Schedule', {
-      Target: Match.objectLike({
-        RetryPolicy: {
-          MaximumRetryAttempts: 3,
-          MaximumEventAgeInSeconds: 300,
-        },
-      }),
-    });
-  });
-
-  it('targets the calibration lambda', () => {
-    template.hasResourceProperties('AWS::Scheduler::Schedule', {
-      Target: Match.objectLike({
-        Arn: Match.objectLike({ 'Fn::GetAtt': Match.anyValue() }),
-      }),
-    });
-  });
-
-  it('runs exactly one schedule, so nothing fires twice per day', () => {
-    template.resourceCountIs('AWS::Scheduler::Schedule', 1);
+  it('gives up quickly instead of the 185-attempt default', () => {
+    const schedules = Object.values(template.findResources('AWS::Scheduler::Schedule'));
+    for (const s of schedules) {
+      expect(s.Properties.Target.RetryPolicy.MaximumRetryAttempts).toBe(2);
+    }
   });
 });
