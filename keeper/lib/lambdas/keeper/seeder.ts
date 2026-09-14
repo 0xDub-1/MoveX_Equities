@@ -31,12 +31,13 @@ import {
 import { CalendarCoverageError, easternDate, isTradingDay } from "../shared/calendar";
 import { candidates } from "../shared/candidates";
 import {
+  DEPOSITORS_PER_MARKET,
   FAUCET_COOLDOWN_SECS,
   SEED_WALLET_COUNT,
   SOL_REFILL_BELOW,
   SOL_TARGET,
   chooseSide,
-  randomAmount,
+  depositAmount,
   seedBytes,
   shuffle,
 } from "../shared/seeding";
@@ -167,6 +168,18 @@ export const handler = async () => {
   const deposited: string[] = [];
   const claimed: string[] = [];
 
+  /** A market this run has something to do with, already read. */
+  interface Target {
+    label: string;
+    market: PublicKey;
+    vault: PublicKey;
+    above: bigint;
+    below: bigint;
+  }
+
+  const toFund: Target[] = [];
+  const toClaim: Target[] = [];
+
   for (let i = 0; i < specs.length; i++) {
     if (!infos[i]) continue;
     const spec = specs[i];
@@ -180,31 +193,66 @@ export const handler = async () => {
       continue;
     }
     const state = Object.keys(m.state)[0];
-    const vault = vaultPda(program.programId, market);
+    const target: Target = {
+      label,
+      market,
+      vault: vaultPda(program.programId, market),
+      above: BigInt(m.abovePool.toString()),
+      below: BigInt(m.belowPool.toString()),
+    };
 
-    // ---- open: each wallet deposits once, side by rule, amount random ------
-    if (state === "open" && now < Number(m.lockTs)) {
-      let abovePool = BigInt(m.abovePool.toString());
-      let belowPool = BigInt(m.belowPool.toString());
+    if (state === "open" && now < Number(m.lockTs)) toFund.push(target);
+    else if (state === "settled" || state === "voided") toClaim.push(target);
+  }
 
-      // Shuffled so the wallet that lands the forced side differs each time.
-      for (const w of shuffle(wallets)) {
-        const position = positionPda(program.programId, market, w.keypair.publicKey);
-        try {
-          const p = await accounts.position.fetch(position);
-          if (Number(p.amount) > 0) continue; // already in
-        } catch {
-          // No position yet: proceed.
-        }
+  // A market missing a side is one lock away from voiding for want of a
+  // counterparty, so it is funded before any market that already has both.
+  // If the budget does run short, it runs short on depth rather than on
+  // whether a market can resolve at all.
+  const oneSided = (t: Target) => (t.above === 0n || t.below === 0n ? 1 : 0);
+  toFund.sort((a, b) => oneSided(b) - oneSided(a));
 
-        const side = chooseSide(abovePool, belowPool);
-        const amount = randomAmount();
+  logger.info("markets to work on", {
+    fund: toFund.length,
+    oneSided: toFund.filter((t) => oneSided(t) === 1).length,
+    claim: toClaim.length,
+  });
 
-        const balance = (await getAccount(connection, w.ata)).amount;
-        if (balance < amount) {
-          logger.info("wallet short on USDX, skipping market", { label, wallet: w.index });
+  // ---- open: a subset of wallets each deposit once ---------------------------
+  for (const [index, target] of toFund.entries()) {
+    const { label, market, vault } = target;
+    let abovePool = target.above;
+    let belowPool = target.below;
+    // Everything from here on, this market included, still to be paid for.
+    const marketsRemaining = toFund.length - index;
+    let backers = 0;
+
+    // Shuffled so the wallets behind a market, and the one that lands the
+    // forced side, differ from market to market.
+    for (const w of shuffle(wallets)) {
+      if (backers >= DEPOSITORS_PER_MARKET) break;
+
+      const position = positionPda(program.programId, market, w.keypair.publicKey);
+      try {
+        const p = await accounts.position.fetch(position);
+        if (Number(p.amount) > 0) {
+          // Already in, and it counts: otherwise every tick would pull in
+          // another wallet until all six were behind the same market.
+          backers++;
           continue;
         }
+      } catch {
+        // No position yet: proceed.
+      }
+
+      const side = chooseSide(abovePool, belowPool);
+      const balance = (await getAccount(connection, w.ata)).amount;
+      const amount = depositAmount(balance, marketsRemaining);
+
+      if (amount === 0n) {
+        logger.info("wallet short on USDX, skipping market", { label, wallet: w.index });
+        continue;
+      }
 
         try {
           await program.methods
@@ -223,6 +271,7 @@ export const handler = async () => {
             .rpc();
           if (side === "above") abovePool += amount;
           else belowPool += amount;
+          backers++;
           deposited.push(`${label}:${side}:${w.index}`);
         } catch (err) {
           logger.warn("deposit failed", {
@@ -232,43 +281,45 @@ export const handler = async () => {
             error: err instanceof Error ? err.message.split("\n")[0] : String(err),
           });
         }
-      }
     }
+  }
 
-    // ---- resolved: claim what is ours -------------------------------------
-    if (state === "settled" || state === "voided") {
-      for (const w of wallets) {
-        const position = positionPda(program.programId, market, w.keypair.publicKey);
-        let p: any;
-        try {
-          p = await accounts.position.fetch(position);
-        } catch {
-          continue; // never deposited here
-        }
-        if (p.claimed || Number(p.amount) === 0) continue;
+  // ---- resolved: claim what is ours -------------------------------------------
+  // Every wallet, not a subset: which of them is holding a winning position
+  // is whatever the draw did on the way in, and an unclaimed one is money
+  // the next day's markets are counting on.
+  for (const { label, market, vault } of toClaim) {
+    for (const w of wallets) {
+      const position = positionPda(program.programId, market, w.keypair.publicKey);
+      let p: any;
+      try {
+        p = await accounts.position.fetch(position);
+      } catch {
+        continue; // never deposited here
+      }
+      if (p.claimed || Number(p.amount) === 0) continue;
 
-        // A losing position has nothing to claim and the program says so.
-        // Trying is cheaper than working out the winner client-side.
-        try {
-          await program.methods
-            .claim()
-            .accounts({
-              user: w.keypair.publicKey,
-              market,
-              position,
-              vault,
-              userTokenAccount: w.ata,
-              quoteMint: mint,
-              tokenProgram: TOKEN_PROGRAM_ID,
-            })
-            .signers([w.keypair])
-            .rpc();
-          claimed.push(`${label}:${w.index}`);
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          if (!/NotOnWinningSide|AlreadyClaimed/.test(msg)) {
-            logger.warn("claim failed", { label, wallet: w.index, error: msg.split("\n")[0] });
-          }
+      // A losing position has nothing to claim and the program says so.
+      // Trying is cheaper than working out the winner client-side.
+      try {
+        await program.methods
+          .claim()
+          .accounts({
+            user: w.keypair.publicKey,
+            market,
+            position,
+            vault,
+            userTokenAccount: w.ata,
+            quoteMint: mint,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .signers([w.keypair])
+          .rpc();
+        claimed.push(`${label}:${w.index}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!/NotOnWinningSide|AlreadyClaimed/.test(msg)) {
+          logger.warn("claim failed", { label, wallet: w.index, error: msg.split("\n")[0] });
         }
       }
     }

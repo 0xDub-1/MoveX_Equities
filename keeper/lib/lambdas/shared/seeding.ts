@@ -12,16 +12,32 @@ export type Side = "above" | "below";
 export type Rng = () => number;
 
 /**
- * Three wallets, each drawing 10,000 USDX a day from the faucet and spreading
- * it across the day's markets. Roughly 30,000 USDX of seeded liquidity daily.
+ * Six wallets, each drawing 10,000 USDX a day from its own faucet allowance,
+ * so about 60,000 USDX a day in all.
+ *
+ * More wallets only help because each market is backed by a subset of them.
+ * Funding every market from every wallet would raise the bill exactly as
+ * fast as the budget, and the shortfall that left markets one-sided would
+ * survive the change untouched.
  */
-export const SEED_WALLET_COUNT = 3;
+export const SEED_WALLET_COUNT = 6;
 
 /**
- * Each deposit is drawn from this range, in USDX base units.
+ * How many wallets back one market.
  *
- * Fifteen markets a day (six hourly, nine daily) at an average of 650 comes
- * to about 9,750, which is the daily faucet allowance with winnings on top.
+ * Two is the floor, because both sides have to hold something or the market
+ * voids at lock for want of a counterparty. Three makes a pool read as a
+ * handful of participants rather than a duel. Past that the budget goes on
+ * something nobody can see.
+ *
+ * With fifteen markets a day this asks for 45 deposits against six daily
+ * allowances, which is roughly double the cover the old three wallets had.
+ */
+export const DEPOSITORS_PER_MARKET = 3;
+
+/**
+ * Each deposit is drawn from this range, in USDX base units, narrowed by
+ * whatever share of the wallet's balance the markets still to fund allow.
  */
 export const DEPOSIT_MIN = 300_000_000n; // 300 USDX
 export const DEPOSIT_MAX = 1_000_000_000n; // 1,000 USDX
@@ -63,9 +79,35 @@ export function chooseSide(abovePool: bigint, belowPool: bigint, rng: Rng = Math
   return rng() < 0.5 ? "above" : "below";
 }
 
-/** A fresh random amount inside the configured range. */
-export function randomAmount(rng: Rng = Math.random): bigint {
-  const span = Number(DEPOSIT_MAX - DEPOSIT_MIN);
+/**
+ * What one deposit should be, given what the wallet holds and how many
+ * markets it still has to reach.
+ *
+ * The seeder used to draw from the full range regardless of balance and
+ * spend first come, first served. On a day when the arithmetic ran close it
+ * emptied the early wallets and the markets created late in the afternoon
+ * got nothing, which left them one-sided and bound to void at lock. Sizing
+ * each deposit to its share of what is left means the money reaches every
+ * market or it reaches none of them short.
+ *
+ * Returns zero when the wallet cannot cover even the minimum, which the
+ * caller reads as "skip".
+ */
+export function depositAmount(
+  balance: bigint,
+  marketsRemaining: number,
+  rng: Rng = Math.random,
+): bigint {
+  if (balance < DEPOSIT_MIN) return 0n;
+
+  const remaining = BigInt(Math.max(1, marketsRemaining));
+  const share = balance / remaining;
+
+  // Too thin to randomise: fund at the minimum and reach as many as possible.
+  if (share <= DEPOSIT_MIN) return DEPOSIT_MIN;
+
+  const cap = share < DEPOSIT_MAX ? share : DEPOSIT_MAX;
+  const span = Number(cap - DEPOSIT_MIN);
   return DEPOSIT_MIN + BigInt(Math.floor(rng() * (span + 1)));
 }
 

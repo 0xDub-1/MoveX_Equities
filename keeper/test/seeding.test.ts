@@ -1,9 +1,10 @@
 import {
   DEPOSIT_MAX,
   DEPOSIT_MIN,
+  DEPOSITORS_PER_MARKET,
   SEED_WALLET_COUNT,
   chooseSide,
-  randomAmount,
+  depositAmount,
   seedBytes,
   shuffle,
 } from '../lib/lambdas/shared/seeding';
@@ -71,22 +72,69 @@ describe('chooseSide', () => {
   });
 });
 
-describe('randomAmount', () => {
-  it('stays inside the configured range at both extremes', () => {
-    expect(randomAmount(() => 0)).toBe(DEPOSIT_MIN);
-    expect(randomAmount(() => 1 - 1e-12)).toBe(DEPOSIT_MAX);
+describe('depositAmount', () => {
+  /** A wallet with more than it could possibly spend on one market. */
+  const RICH = DEPOSIT_MAX * 100n;
+
+  it('spans the configured range at both extremes when the budget is ample', () => {
+    expect(depositAmount(RICH, 1, () => 0)).toBe(DEPOSIT_MIN);
+    expect(depositAmount(RICH, 1, () => 1 - 1e-12)).toBe(DEPOSIT_MAX);
   });
 
   it('varies with the draw', () => {
-    expect(randomAmount(() => 0.25)).not.toBe(randomAmount(() => 0.75));
+    expect(depositAmount(RICH, 1, () => 0.25)).not.toBe(depositAmount(RICH, 1, () => 0.75));
   });
 
   it('never leaves the range under real randomness', () => {
     for (let i = 0; i < 500; i++) {
-      const a = randomAmount();
+      const a = depositAmount(RICH, 1);
       expect(a >= DEPOSIT_MIN).toBe(true);
       expect(a <= DEPOSIT_MAX).toBe(true);
     }
+  });
+
+  it('never commits more than the share of what is left that one market is due', () => {
+    const balance = 3_000_000_000n; // 3,000 USDX
+    expect(depositAmount(balance, 3, () => 1 - 1e-12)).toBe(1_000_000_000n);
+    expect(depositAmount(balance, 6, () => 1 - 1e-12)).toBe(500_000_000n);
+  });
+
+  it('falls back to the minimum when the share is thinner than one deposit', () => {
+    // 1,000 USDX with ten markets still to reach is 100 a market, under the
+    // 300 floor. Funding a few at the floor beats funding none.
+    expect(depositAmount(1_000_000_000n, 10, () => 0.9)).toBe(DEPOSIT_MIN);
+  });
+
+  it('skips a wallet that cannot cover the minimum', () => {
+    expect(depositAmount(DEPOSIT_MIN - 1n, 1)).toBe(0n);
+    expect(depositAmount(0n, 5)).toBe(0n);
+  });
+
+  /**
+   * The bug this pins. The seeder used to draw from the full range whatever
+   * the balance, spending first come first served, so on 14 September 2026
+   * the early markets emptied two wallets and the nine created that
+   * afternoon got nothing. Several were left with one side at zero, which
+   * voids at lock for want of a counterparty.
+   */
+  it('reaches every market of a full day on one daily allowance', () => {
+    const MARKETS_PER_DAY = 15;
+    // What one wallet backs: every market needs DEPOSITORS_PER_MARKET of the
+    // SEED_WALLET_COUNT wallets, and the draw spreads that evenly.
+    const perWallet = Math.ceil((MARKETS_PER_DAY * DEPOSITORS_PER_MARKET) / SEED_WALLET_COUNT);
+
+    let balance = 10_000_000_000n; // one faucet draw
+    let funded = 0;
+    for (let i = 0; i < perWallet; i++) {
+      // Sized against the whole day, which is what the seeder passes.
+      const amount = depositAmount(balance, MARKETS_PER_DAY - i, () => 1 - 1e-12);
+      if (amount === 0n) break;
+      balance -= amount;
+      funded++;
+    }
+
+    expect(funded).toBe(perWallet);
+    expect(balance >= 0n).toBe(true);
   });
 });
 
