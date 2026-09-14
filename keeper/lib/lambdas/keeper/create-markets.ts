@@ -19,6 +19,7 @@ import {
   easternDate,
   isTradingDay,
   dailyMarketDates,
+  nextTradingDay,
 } from "../shared/calendar";
 import { HOURLY_TICKER, PUBLISHED_TICKERS } from "../shared/config";
 import { TICKERS } from "../strikes/config";
@@ -73,9 +74,51 @@ function sessionToday(): string | null {
 
 // ---------------------------------------------------------------------------
 
-/** 09:00 ET. Creates every hourly market the session can carry. */
-export const hourlyHandler = async () => {
-  const date = sessionToday();
+/** Which session an hourly run creates markets for. */
+type HourlyTarget = "today" | "next";
+
+interface HourlyEvent {
+  session?: HourlyTarget;
+}
+
+/**
+ * The session a run targets, or null when there is nothing to create.
+ *
+ * Both targets require today to be a session, so markets are only ever
+ * created on trading days. That keeps the hourly runs consistent with the
+ * daily one rather than having a holiday produce intraday markets and no
+ * ladder.
+ */
+function targetSession(target: HourlyTarget): string | null {
+  const today = sessionToday();
+  if (!today || target === "today") return today;
+
+  try {
+    return nextTradingDay(today);
+  } catch (err) {
+    if (err instanceof CalendarCoverageError) {
+      logger.error("calendar cannot name the next session, creating nothing", {
+        today,
+        error: err.message,
+      });
+      return null;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Creates one session's hourly markets.
+ *
+ * The run that matters is at 15:55 with `session: "next"`, alongside the
+ * daily ladder, so the first hour of tomorrow opens for deposits the evening
+ * before instead of sixty minutes ahead of its lock. The 09:00 run passes
+ * `session: "today"` and is a backstop: when the evening run did its job it
+ * finds every market already there and creates nothing.
+ */
+export const hourlyHandler = async (event?: HourlyEvent) => {
+  const target: HourlyTarget = event?.session === "next" ? "next" : "today";
+  const date = targetSession(target);
   if (!date) return { created: [], existing: [], failed: [] };
 
   const program = await getProgram();
@@ -83,6 +126,7 @@ export const hourlyHandler = async () => {
 
   const specs = hourlySpecs(date, HOURLY_TICKER, ladder.strikeBps, ladder.samplesBps);
   logger.info("hourly markets for the session", {
+    target,
     date,
     count: specs.length,
     strikeBps: ladder.strikeBps,

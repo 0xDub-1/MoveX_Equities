@@ -31,15 +31,25 @@ export interface Candidate {
 export function candidates(today: string): Candidate[] {
   const out: Candidate[] = [];
 
-  // Today's hourly slots. Cheap to include all of them: most will already be
-  // settled and get skipped on state.
+  // Hourly slots for today and for the next session. The next session's
+  // markets are created at 15:55 the evening before, so the seeder has to
+  // see them that same hour rather than waiting until the morning, which is
+  // the whole point of creating them early.
+  const hourlyDates = [today];
   try {
-    for (const slot of hourlySlots(today)) {
-      out.push({ symbol: HOURLY_TICKER, sessionId: slot.sessionId, tier: "fair" });
-    }
+    hourlyDates.push(nextTradingDay(today));
   } catch {
-    // Not a trading day, so no hourly slots. Daily markets from previous
-    // sessions may still need settling, so this is not fatal.
+    // Calendar does not cover the year ahead.
+  }
+  for (const date of hourlyDates) {
+    try {
+      for (const slot of hourlySlots(date)) {
+        out.push({ symbol: HOURLY_TICKER, sessionId: slot.sessionId, tier: "fair" });
+      }
+    } catch {
+      // Not a trading day, so no hourly slots there. Daily markets from
+      // previous sessions may still need settling, so this is not fatal.
+    }
   }
 
   // Daily markets are keyed by the date they settle. The one that locks at

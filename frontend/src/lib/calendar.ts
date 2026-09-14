@@ -181,9 +181,9 @@ export const OPEN_MINUTES = 9 * 60 + 30;
 export const REGULAR_CLOSE_MINUTES = 16 * 60;
 export const HALF_DAY_CLOSE_MINUTES = 13 * 60;
 
-/** When the keeper posts the day's hourly markets. */
+/** When the keeper backstops the day's hourly markets, if 15:55 missed them. */
 export const HOURLY_POST_MINUTES = 9 * 60;
-/** When the keeper posts the next daily markets. */
+/** When the keeper posts the next session's markets, hourly and daily both. */
 export const DAILY_POST_MINUTES = 15 * 60 + 55;
 
 function isWeekend(date: string): boolean {
@@ -212,6 +212,21 @@ export function nextTradingDay(date: string): string {
   let next = addDays(date, 1);
   for (let i = 0; i < 14 && !isTradingDay(next); i++) next = addDays(next, 1);
   return next;
+}
+
+/**
+ * When markets for a coming session are next created.
+ *
+ * The keeper posts both the daily ladder and the next session's hourly
+ * markets at 15:55 on a trading day, so this is the one moment the board
+ * gains anything new.
+ */
+export function nextPostTs(at: Date = new Date()): number {
+  const date = etDate(at);
+  if (isTradingDay(date) && etMinutes(at) < DAILY_POST_MINUTES) {
+    return easternTimestamp(date, DAILY_POST_MINUTES);
+  }
+  return easternTimestamp(nextTradingDay(date), DAILY_POST_MINUTES);
 }
 
 export interface SessionStatus {

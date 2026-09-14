@@ -33,8 +33,34 @@ describe('crank candidates', () => {
 
   it('includes the session hourly slots on a trading day', () => {
     const hourly = candidates('2026-09-14').filter((c) => !daily(c));
-    expect(hourly).toHaveLength(6);
-    expect(hourly[0].sessionId).toBe('0914-1000');
+    const today = hourly.filter((c) => c.sessionId.startsWith('0914-'));
+    expect(today).toHaveLength(6);
+    expect(today[0].sessionId).toBe('0914-1000');
+  });
+});
+
+describe('crank candidates, next session hourly', () => {
+  /**
+   * The hourly markets for a session are created at 15:55 the evening
+   * before. The seeder funds whatever candidates lists, so leaving the next
+   * session out would hand those markets an empty book all night and hand
+   * the morning's first hour no counterparty.
+   */
+  it('includes the next session hourly slots, created the evening before', () => {
+    const hourly = candidates('2026-09-14').filter((c) => !daily(c));
+    expect(hourly.filter((c) => c.sessionId.startsWith('0915-'))).toHaveLength(6);
+  });
+
+  it('skips the weekend, so Friday evening lists Monday hours', () => {
+    const hourly = candidates('2026-09-11').filter((c) => !daily(c));
+    expect(hourly.filter((c) => c.sessionId.startsWith('0914-'))).toHaveLength(6);
+    expect(hourly.some((c) => c.sessionId.startsWith('0912-'))).toBe(false);
+  });
+
+  it('lists the next session even when today is not one', () => {
+    // Saturday. No hours today, but Monday's are already on chain.
+    const hourly = candidates('2026-09-12').filter((c) => !daily(c));
+    expect(hourly.filter((c) => c.sessionId.startsWith('0914-'))).toHaveLength(6);
   });
 });
 

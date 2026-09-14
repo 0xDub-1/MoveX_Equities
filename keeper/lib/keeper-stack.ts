@@ -6,7 +6,7 @@ import { Runtime } from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
-import { Schedule, ScheduleExpression } from 'aws-cdk-lib/aws-scheduler';
+import { Schedule, ScheduleExpression, ScheduleTargetInput } from 'aws-cdk-lib/aws-scheduler';
 import { LambdaInvoke } from 'aws-cdk-lib/aws-scheduler-targets';
 
 /**
@@ -16,7 +16,8 @@ import { LambdaInvoke } from 'aws-cdk-lib/aws-scheduler-targets';
  * own cadence, so a failure in one does not take the others down with it.
  *
  *   Publisher      every minute      writes each ticker's PriceFeed
- *   HourlyMarkets  09:00 ET          creates the session's intraday markets
+ *   HourlyMarkets  15:55 ET          creates the NEXT session's intraday
+ *                  09:00 ET          markets, with a morning backstop
  *   DailyMarkets   15:55 ET          creates the next close-to-close markets
  *   Crank          every minute      locks and settles whatever is due
  *   Seeder         every 10 min      funds both sides, claims winnings (devnet)
@@ -213,8 +214,12 @@ export class KeeperStack extends cdk.Stack {
     lambdaKey: string,
     expression: ScheduleExpression,
     description: string,
+    /** Payload the handler reads, for a lambda driven by more than one cron. */
+    input?: ScheduleTargetInput,
   ): void {
-    this.schedules[lambdaKey] = new Schedule(this, id, {
+    // Keyed by schedule id rather than lambda, because one lambda can answer
+    // to two crons with different payloads.
+    this.schedules[id] = new Schedule(this, id, {
       description,
       schedule: expression,
       target: new LambdaInvoke(this.lambdas[lambdaKey], {
@@ -223,6 +228,7 @@ export class KeeperStack extends cdk.Stack {
         // evening over a tick nobody wants any more.
         retryAttempts: 2,
         maxEventAge: Duration.minutes(2),
+        input,
       }),
     });
   }
@@ -246,13 +252,26 @@ export class KeeperStack extends cdk.Stack {
       'Lock and settle markets whose moment has arrived',
     );
 
-    // An hour before the first lock at 10:00, so the shortest deposit window
-    // of the day is still a full hour.
+    // Alongside the daily ladder, for the next session rather than this one.
+    // The first hour of tomorrow locks at 10:00, so creating it now gives it
+    // an overnight deposit window instead of sixty minutes.
     this.schedule(
       'HourlyMarketsSchedule',
       'hourlyMarkets',
+      ScheduleExpression.cron({ minute: '55', hour: '15', weekDay: 'MON-FRI', timeZone: ny }),
+      "Create the next session's intraday markets",
+      ScheduleTargetInput.fromObject({ session: 'next' }),
+    );
+
+    // A backstop an hour before the first lock. When the evening run did its
+    // job this finds every market already there and creates nothing; when it
+    // did not, the day still gets its markets with a shorter window.
+    this.schedule(
+      'HourlyBackstopSchedule',
+      'hourlyMarkets',
       ScheduleExpression.cron({ minute: '0', hour: '9', weekDay: 'MON-FRI', timeZone: ny }),
-      "Create the session's intraday markets",
+      "Backstop: create today's intraday markets if the evening run did not",
+      ScheduleTargetInput.fromObject({ session: 'today' }),
     );
 
     // Five minutes before the close, so the markets that lock at it exist
@@ -264,9 +283,9 @@ export class KeeperStack extends cdk.Stack {
       'Create the close-to-close markets that lock at today\'s close',
     );
 
-    // Every ten minutes through the session. Markets appear at 09:00 and
-    // 15:55; the next tick funds them, and later ticks are no-ops for any
-    // market the wallets already hold positions in.
+    // Every ten minutes through the session. Markets appear at 15:55 for the
+    // next session; the next tick funds them, and later ticks are no-ops for
+    // any market the wallets already hold positions in.
     this.schedule(
       'SeederSchedule',
       'seeder',

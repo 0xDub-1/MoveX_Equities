@@ -317,23 +317,31 @@ export function Stat({
 // Time
 // ---------------------------------------------------------------------------
 
-/** Live countdown to a unix timestamp. Renders `0S` once it passes. */
+/** Inside this many seconds a countdown turns amber, so it catches the eye. */
+export const URGENT_SECONDS = 15 * 60;
+
+/** Live countdown to a unix timestamp. Renders the done label once it passes. */
 export function Countdown({
   to,
   className,
   prefix,
   done = "Now",
+  urgentBelow = URGENT_SECONDS,
 }: {
   to: number;
   className?: string;
   prefix?: ReactNode;
   done?: ReactNode;
+  /** Seconds under which the value turns amber. Pass 0 to never do that. */
+  urgentBelow?: number;
 }) {
   const now = useNow();
   if (!now) return <span className={cn("tabular", className)}>&nbsp;</span>;
   const remaining = to - now;
+  const urgent = remaining > 0 && remaining <= urgentBelow;
   return (
-    <span className={cn("tabular", className)}>
+    // The urgent class sits after `className` so it wins the merge.
+    <span className={cn("tabular", className, urgent && "font-semibold text-warning")}>
       {prefix}
       {remaining > 0 ? fmtCountdown(remaining) : done}
     </span>

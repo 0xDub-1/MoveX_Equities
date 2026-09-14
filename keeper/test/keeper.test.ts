@@ -68,8 +68,8 @@ describe('permissions', () => {
 });
 
 describe('schedules', () => {
-  it('runs five of them', () => {
-    template.resourceCountIs('AWS::Scheduler::Schedule', 5);
+  it('runs six of them', () => {
+    template.resourceCountIs('AWS::Scheduler::Schedule', 6);
   });
 
   /**
@@ -80,16 +80,30 @@ describe('schedules', () => {
   it('declares New York time on every schedule, never UTC', () => {
     const schedules = template.findResources('AWS::Scheduler::Schedule');
     const entries = Object.values(schedules);
-    expect(entries).toHaveLength(5);
+    expect(entries).toHaveLength(6);
     for (const s of entries) {
       expect(s.Properties.ScheduleExpressionTimezone).toBe('America/New_York');
     }
   });
 
-  it('creates the intraday markets an hour before the first lock', () => {
+  /**
+   * The intraday markets are created the evening before, at the same moment
+   * as the daily ladder, so the first hour of a session opens for deposits
+   * overnight rather than sixty minutes before it locks.
+   */
+  it('creates the next session intraday markets alongside the daily ladder', () => {
+    template.hasResourceProperties('AWS::Scheduler::Schedule', {
+      ScheduleExpression: 'cron(55 15 ? * MON-FRI *)',
+      ScheduleExpressionTimezone: 'America/New_York',
+      Target: Match.objectLike({ Input: JSON.stringify({ session: 'next' }) }),
+    });
+  });
+
+  it('keeps a morning backstop for the session that starts today', () => {
     template.hasResourceProperties('AWS::Scheduler::Schedule', {
       ScheduleExpression: 'cron(0 9 ? * MON-FRI *)',
       ScheduleExpressionTimezone: 'America/New_York',
+      Target: Match.objectLike({ Input: JSON.stringify({ session: 'today' }) }),
     });
   });
 

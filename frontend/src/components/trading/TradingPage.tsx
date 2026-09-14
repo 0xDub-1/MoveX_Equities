@@ -11,7 +11,7 @@
 import { useMemo, useState } from "react";
 import { CalendarClock, Layers, RefreshCw } from "lucide-react";
 
-import { sessionStatus } from "@/lib/calendar";
+import { nextPostTs, sessionStatus } from "@/lib/calendar";
 import { TICKERS, type Ticker } from "@/lib/config";
 import { groupMarkets, tabOf, TAB_META, type MarketGroup, type Tab } from "@/lib/groups";
 import { phaseOf, pot, type MarketKind } from "@/lib/market";
@@ -25,6 +25,7 @@ import { Badge, Countdown, EmptyState, SegmentedControl, Skeleton } from "@/comp
 import HourlySession from "./HourlySession";
 import HowItWorks from "./HowItWorks";
 import LadderGroup from "./LadderGroup";
+import SessionTimeline from "./SessionTimeline";
 
 type KindFilter = MarketKind | "all";
 
@@ -85,6 +86,18 @@ export default function TradingPage() {
   const loading = markets.isLoading && !markets.data;
   const nothingAtAll = !loading && (markets.data?.length ?? 0) === 0;
 
+  // When the board next gains anything: 15:55 ET, the daily ladder and the
+  // following session's hours together.
+  const postTs = useMemo(() => {
+    if (!now) return null;
+    try {
+      return nextPostTs(new Date(now * 1000));
+    } catch {
+      // The calendar does not cover the year ahead.
+      return null;
+    }
+  }, [now]);
+
   return (
     <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8">
       {/* Title */}
@@ -111,6 +124,12 @@ export default function TradingPage() {
           </div>
         )}
       </div>
+
+      {loading ? (
+        <Skeleton className="h-[112px]" />
+      ) : (
+        <SessionTimeline markets={markets.data ?? []} now={now} />
+      )}
 
       <HowItWorks key={nothingAtAll ? "open" : "closed"} defaultOpen={nothingAtAll} />
 
@@ -203,18 +222,17 @@ export default function TradingPage() {
             icon={<CalendarClock size={18} />}
             title={TAB_META[tab].empty}
             body={
-              status ? (
-                <span className="flex flex-col items-center gap-2">
-                  <span>
-                    Hourly markets post at 09:00 ET on trading days, the next daily ladder at 15:55 ET.
-                  </span>
-                  <span className="font-mono text-[12px] tabular text-text-2">
-                    {status.nextLabel}
-                    <span className="text-text-4"> · </span>
-                    <Countdown to={status.nextTs} className="text-brand" />
-                  </span>
+              <span className="flex flex-col items-center gap-2">
+                <span>
+                  Markets for the next session post at 15:55 ET, the daily ladder and that
+                  session&apos;s intraday hours together.
                 </span>
-              ) : undefined
+                {postTs && (
+                  <span className="font-mono text-[12px] tabular text-text-2">
+                    Next posting in <Countdown to={postTs} className="text-brand" />
+                  </span>
+                )}
+              </span>
             }
           />
         </div>

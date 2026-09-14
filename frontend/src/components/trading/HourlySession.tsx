@@ -238,6 +238,20 @@ export default function HourlySession({
   const summary = groupSummary(group, now);
   const total = group.markets.reduce((sum, m) => sum + pot(m), 0n);
 
+  // The soonest thing this session does next, so the header carries a clock
+  // even though its rows are in different states.
+  const nextMoment = (() => {
+    let best: { ts: number; kind: "lock" | "settle" } | null = null;
+    for (const m of group.markets) {
+      const phase = phaseOf(m, now);
+      const ts = phase === "deposits" ? m.lockTs : phase === "live" ? m.settleTs : null;
+      const kind = phase === "deposits" ? ("lock" as const) : ("settle" as const);
+      if (ts === null || ts <= now) continue;
+      if (!best || ts < best.ts) best = { ts, kind };
+    }
+    return best;
+  })();
+
   return (
     <section className="animate-fade-up">
       <GroupHeader
@@ -264,14 +278,22 @@ export default function HourlySession({
           </>
         }
         trailing={
-          <span>
-            {summary.map((part, i) => (
-              <span key={part.label}>
-                {i > 0 && <span className="text-text-4"> · </span>}
-                <span className="text-text-1">{part.n}</span> {part.label}
+          <>
+            <span>
+              {summary.map((part, i) => (
+                <span key={part.label}>
+                  {i > 0 && <span className="text-text-4"> · </span>}
+                  <span className="text-text-1">{part.n}</span> {part.label}
+                </span>
+              ))}
+            </span>
+            {nextMoment && (
+              <span>
+                {nextMoment.kind === "lock" ? "Next lock in " : "Settles in "}
+                <Countdown to={nextMoment.ts} className="text-text-1" />
               </span>
-            ))}
-          </span>
+            )}
+          </>
         }
       />
 
