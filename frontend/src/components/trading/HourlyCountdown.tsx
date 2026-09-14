@@ -6,12 +6,12 @@
 //
 // One line saying how long until the intraday markets do something, so that
 // answer does not require reading the board. When there are none it counts
-// down to 15:55, when the next session's are posted.
+// down to the evening, when the next session's are posted.
 
 import { useMemo } from "react";
 import Link from "next/link";
 
-import { nextPostTs } from "@/lib/calendar";
+import { HOURLY_POST_MINUTES, fmtPostTime, nextPostTs } from "@/lib/calendar";
 import type { MarketView } from "@/lib/market";
 import { nextEvent } from "@/lib/upcoming";
 
@@ -30,7 +30,7 @@ export default function HourlyCountdown({
   const postTs = useMemo(() => {
     if (!now) return null;
     try {
-      return nextPostTs(new Date(now * 1000));
+      return nextPostTs(new Date(now * 1000), HOURLY_POST_MINUTES);
     } catch {
       // The calendar does not cover the year ahead.
       return null;
@@ -58,14 +58,14 @@ export default function HourlyCountdown({
         </p>
       ) : postTs ? (
         <p className="text-[13.5px] text-text-2">
-          The next session&apos;s hours post at 15:55 ET, in{" "}
+          The next session&apos;s hours post at {fmtPostTime(HOURLY_POST_MINUTES)} ET, in{" "}
           <span className="font-mono text-[14px] font-semibold tabular text-brand">
             <Countdown to={postTs} />
           </span>
         </p>
       ) : (
         <p className="text-[13.5px] text-text-2">
-          Intraday markets post at 15:55 ET for the following session.
+          Intraday markets post at {fmtPostTime(HOURLY_POST_MINUTES)} ET for the following session.
         </p>
       )}
     </div>

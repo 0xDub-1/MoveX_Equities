@@ -181,9 +181,14 @@ export const OPEN_MINUTES = 9 * 60 + 30;
 export const REGULAR_CLOSE_MINUTES = 16 * 60;
 export const HALF_DAY_CLOSE_MINUTES = 13 * 60;
 
-/** When the keeper backstops the day's hourly markets, if 15:55 missed them. */
-export const HOURLY_POST_MINUTES = 9 * 60;
-/** When the keeper posts the next session's markets, hourly and daily both. */
+/**
+ * When the keeper posts each kind of market, in minutes since ET midnight.
+ *
+ * The daily ladder goes out just before the close. The intraday hours go out
+ * in the evening, for the next session, because their ladder is calibrated
+ * on completed hours and at 15:55 the session's last hour is still running.
+ */
+export const HOURLY_POST_MINUTES = 20 * 60;
 export const DAILY_POST_MINUTES = 15 * 60 + 55;
 
 function isWeekend(date: string): boolean {
@@ -215,18 +220,21 @@ export function nextTradingDay(date: string): string {
 }
 
 /**
- * When markets for a coming session are next created.
- *
- * The keeper posts both the daily ladder and the next session's hourly
- * markets at 15:55 on a trading day, so this is the one moment the board
- * gains anything new.
+ * The next time the keeper runs a posting job, given the minute of the ET
+ * day it runs at. Today's if it has not passed, otherwise the next session's.
  */
-export function nextPostTs(at: Date = new Date()): number {
+export function nextPostTs(at: Date, postMinutes: number): number {
   const date = etDate(at);
-  if (isTradingDay(date) && etMinutes(at) < DAILY_POST_MINUTES) {
-    return easternTimestamp(date, DAILY_POST_MINUTES);
+  if (isTradingDay(date) && etMinutes(at) < postMinutes) {
+    return easternTimestamp(date, postMinutes);
   }
-  return easternTimestamp(nextTradingDay(date), DAILY_POST_MINUTES);
+  return easternTimestamp(nextTradingDay(date), postMinutes);
+}
+
+/** `20:00`, for copy that names the hour the hours are posted. */
+export function fmtPostTime(postMinutes: number): string {
+  const h = String(Math.floor(postMinutes / 60)).padStart(2, "0");
+  return `${h}:${String(postMinutes % 60).padStart(2, "0")}`;
 }
 
 export interface SessionStatus {
@@ -248,21 +256,13 @@ export function sessionStatus(at: Date = new Date()): SessionStatus {
     return {
       open: false,
       label: isWeekend(date) ? "Weekend" : "Market holiday",
-      nextLabel: `Hourly markets post ${fmtSessionDate(next)} 09:00 ET`,
-      nextTs: easternTimestamp(next, HOURLY_POST_MINUTES),
+      nextLabel: `Session opens ${fmtSessionDate(next)} 09:30 ET`,
+      nextTs: easternTimestamp(next, OPEN_MINUTES),
     };
   }
 
   const close = closeMinutes(date);
 
-  if (minutes < HOURLY_POST_MINUTES) {
-    return {
-      open: false,
-      label: "Pre-market",
-      nextLabel: "Hourly markets post at 09:00 ET",
-      nextTs: easternTimestamp(date, HOURLY_POST_MINUTES),
-    };
-  }
   if (minutes < OPEN_MINUTES) {
     return {
       open: false,
@@ -280,11 +280,21 @@ export function sessionStatus(at: Date = new Date()): SessionStatus {
       nextTs: easternTimestamp(date, close),
     };
   }
+  // Closed for the day. The evening posting is the next thing that happens,
+  // and once that is done the next session's open is.
+  if (minutes < HOURLY_POST_MINUTES) {
+    return {
+      open: false,
+      label: "After hours",
+      nextLabel: `Next session's hours post at ${fmtPostTime(HOURLY_POST_MINUTES)} ET`,
+      nextTs: easternTimestamp(date, HOURLY_POST_MINUTES),
+    };
+  }
   const next = nextTradingDay(date);
   return {
     open: false,
     label: "After hours",
-    nextLabel: `Hourly markets post ${fmtSessionDate(next)} 09:00 ET`,
-    nextTs: easternTimestamp(next, HOURLY_POST_MINUTES),
+    nextLabel: `Session opens ${fmtSessionDate(next)} 09:30 ET`,
+    nextTs: easternTimestamp(next, OPEN_MINUTES),
   };
 }

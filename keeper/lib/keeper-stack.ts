@@ -16,7 +16,7 @@ import { LambdaInvoke } from 'aws-cdk-lib/aws-scheduler-targets';
  * own cadence, so a failure in one does not take the others down with it.
  *
  *   Publisher      every minute      writes each ticker's PriceFeed
- *   HourlyMarkets  15:55 ET          creates the NEXT session's intraday
+ *   HourlyMarkets  20:00 ET          creates the NEXT session's intraday
  *                  09:00 ET          markets, with a morning backstop
  *   DailyMarkets   15:55 ET          creates the next close-to-close markets
  *   Crank          every minute      locks and settles whatever is due
@@ -252,13 +252,18 @@ export class KeeperStack extends cdk.Stack {
       'Lock and settle markets whose moment has arrived',
     );
 
-    // Alongside the daily ladder, for the next session rather than this one.
-    // The first hour of tomorrow locks at 10:00, so creating it now gives it
-    // an overnight deposit window instead of sixty minutes.
+    // Well after the close, for the next session rather than this one. The
+    // first hour of tomorrow locks at 10:00, so creating it in the evening
+    // gives it an overnight deposit window instead of sixty minutes.
+    //
+    // 20:00 rather than alongside the daily ladder at 15:55 because the
+    // intraday ladder is calibrated on completed hours: at 15:55 the last
+    // hour of the session is still running and the window it measures is one
+    // bar short.
     this.schedule(
       'HourlyMarketsSchedule',
       'hourlyMarkets',
-      ScheduleExpression.cron({ minute: '55', hour: '15', weekDay: 'MON-FRI', timeZone: ny }),
+      ScheduleExpression.cron({ minute: '0', hour: '20', weekDay: 'MON-FRI', timeZone: ny }),
       "Create the next session's intraday markets",
       ScheduleTargetInput.fromObject({ session: 'next' }),
     );
@@ -283,13 +288,14 @@ export class KeeperStack extends cdk.Stack {
       'Create the close-to-close markets that lock at today\'s close',
     );
 
-    // Every ten minutes through the session. Markets appear at 15:55 for the
-    // next session; the next tick funds them, and later ticks are no-ops for
-    // any market the wallets already hold positions in.
+    // Every ten minutes from the hour before the open to the hour after the
+    // intraday markets are posted, so both creation moments are followed by
+    // a tick that funds what they made. Later ticks are no-ops for any
+    // market the wallets already hold positions in.
     this.schedule(
       'SeederSchedule',
       'seeder',
-      ScheduleExpression.cron({ minute: '*/10', hour: '9-16', weekDay: 'MON-FRI', timeZone: ny }),
+      ScheduleExpression.cron({ minute: '*/10', hour: '9-20', weekDay: 'MON-FRI', timeZone: ny }),
       'Fund both sides of open markets and claim seed-wallet winnings',
     );
   }

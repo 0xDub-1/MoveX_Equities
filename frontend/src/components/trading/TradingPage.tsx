@@ -11,7 +11,13 @@
 import { useMemo, useState } from "react";
 import { CalendarClock, Layers, RefreshCw } from "lucide-react";
 
-import { nextPostTs, sessionStatus } from "@/lib/calendar";
+import {
+  DAILY_POST_MINUTES,
+  HOURLY_POST_MINUTES,
+  fmtPostTime,
+  nextPostTs,
+  sessionStatus,
+} from "@/lib/calendar";
 import { TICKERS, type Ticker } from "@/lib/config";
 import { groupMarkets, tabOf, TAB_META, type MarketGroup, type Tab } from "@/lib/groups";
 import { phaseOf, pot, type MarketKind } from "@/lib/market";
@@ -86,12 +92,13 @@ export default function TradingPage() {
   const loading = markets.isLoading && !markets.data;
   const nothingAtAll = !loading && (markets.data?.length ?? 0) === 0;
 
-  // When the board next gains anything: 15:55 ET, the daily ladder and the
-  // following session's hours together.
+  // When the board next gains anything. The two kinds are posted at
+  // different hours, so this is whichever comes first.
   const postTs = useMemo(() => {
     if (!now) return null;
     try {
-      return nextPostTs(new Date(now * 1000));
+      const at = new Date(now * 1000);
+      return Math.min(nextPostTs(at, DAILY_POST_MINUTES), nextPostTs(at, HOURLY_POST_MINUTES));
     } catch {
       // The calendar does not cover the year ahead.
       return null;
@@ -224,8 +231,8 @@ export default function TradingPage() {
             body={
               <span className="flex flex-col items-center gap-2">
                 <span>
-                  Markets for the next session post at 15:55 ET, the daily ladder and that
-                  session&apos;s intraday hours together.
+                  The daily ladder is posted at {fmtPostTime(DAILY_POST_MINUTES)} ET and the next
+                  session&apos;s intraday hours at {fmtPostTime(HOURLY_POST_MINUTES)} ET.
                 </span>
                 {postTs && (
                   <span className="font-mono text-[12px] tabular text-text-2">

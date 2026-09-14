@@ -87,15 +87,23 @@ describe('schedules', () => {
   });
 
   /**
-   * The intraday markets are created the evening before, at the same moment
-   * as the daily ladder, so the first hour of a session opens for deposits
-   * overnight rather than sixty minutes before it locks.
+   * The intraday markets are created the evening before, so the first hour
+   * of a session opens for deposits overnight rather than sixty minutes
+   * before it locks. After the close, too, because the ladder is calibrated
+   * on completed hours and at 15:55 the last one is still running.
    */
-  it('creates the next session intraday markets alongside the daily ladder', () => {
+  it('creates the next session intraday markets in the evening', () => {
     template.hasResourceProperties('AWS::Scheduler::Schedule', {
-      ScheduleExpression: 'cron(55 15 ? * MON-FRI *)',
+      ScheduleExpression: 'cron(0 20 ? * MON-FRI *)',
       ScheduleExpressionTimezone: 'America/New_York',
       Target: Match.objectLike({ Input: JSON.stringify({ session: 'next' }) }),
+    });
+  });
+
+  it('runs the seeder past the moment the intraday markets are posted', () => {
+    template.hasResourceProperties('AWS::Scheduler::Schedule', {
+      ScheduleExpression: 'cron(*/10 9-20 ? * MON-FRI *)',
+      ScheduleExpressionTimezone: 'America/New_York',
     });
   });
 
