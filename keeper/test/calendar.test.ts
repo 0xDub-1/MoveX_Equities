@@ -1,6 +1,7 @@
 import {
   CalendarCoverageError,
   closeMinutes,
+  dailyMarketDates,
   easternDate,
   easternMinutes,
   easternTimestamp,
@@ -135,5 +136,40 @@ describe('eastern time helpers', () => {
     // the first Sunday in November.
     const winter = easternTimestamp('2026-01-15', 16 * 60);
     expect(new Date(winter * 1000).toISOString()).toBe('2026-01-15T21:00:00.000Z');
+  });
+});
+
+describe('dailyMarketDates', () => {
+  it('locks at the next session and settles the one after', () => {
+    expect(dailyMarketDates('2026-09-14')).toEqual({
+      lockDate: '2026-09-15',
+      settleDate: '2026-09-16',
+    });
+  });
+
+  /**
+   * The bug this pins. Locking on the creation day gave a five minute deposit
+   * window, from the 15:55 creation run to the 16:00 close.
+   */
+  it('never locks on the day it is created', () => {
+    for (const day of ['2026-09-14', '2026-09-15', '2026-09-11']) {
+      expect(dailyMarketDates(day).lockDate).not.toBe(day);
+    }
+  });
+
+  it('skips weekends', () => {
+    // Created Friday: lock Monday, settle Tuesday.
+    expect(dailyMarketDates('2026-09-11')).toEqual({
+      lockDate: '2026-09-14',
+      settleDate: '2026-09-15',
+    });
+  });
+
+  it('skips holidays', () => {
+    // Created Wed 25 Nov. Thu 26 is Thanksgiving, so lock Fri 27, settle Mon 30.
+    expect(dailyMarketDates('2026-11-25')).toEqual({
+      lockDate: '2026-11-27',
+      settleDate: '2026-11-30',
+    });
   });
 });

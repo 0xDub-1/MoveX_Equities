@@ -18,7 +18,7 @@ import {
   CalendarCoverageError,
   easternDate,
   isTradingDay,
-  nextTradingDay,
+  dailyMarketDates,
 } from "../shared/calendar";
 import { HOURLY_TICKER, PUBLISHED_TICKERS } from "../shared/config";
 import { TICKERS } from "../strikes/config";
@@ -100,16 +100,17 @@ export const hourlyHandler = async () => {
   return result;
 };
 
-/** 15:55 ET. Creates the markets that lock at today's close. */
+/** 15:55 ET. Creates the daily markets that lock at the next session's close. */
 export const dailyHandler = async () => {
   const date = sessionToday();
   if (!date) return { created: [], existing: [], failed: [] };
 
   const program = await getProgram();
 
-  // Locks at today's close, settles at the next session's close. Deposits
-  // have been open since this ran yesterday, so the window is a full day.
-  const settleDate = nextTradingDay(date);
+  // Locks at the NEXT session's close and settles the one after, so the
+  // deposit window is about a day. Locking at today's close would give five
+  // minutes between this run and the lock.
+  const { lockDate, settleDate } = dailyMarketDates(date);
 
   const specs: MarketSpec[] = [];
   for (const symbol of PUBLISHED_TICKERS) {
@@ -117,7 +118,7 @@ export const dailyHandler = async () => {
       const ladder = await dailyLadder(symbol);
       for (const tier of DAILY_RUNGS[symbol] ?? ["fair"]) {
         specs.push(
-          dailySpec(date, settleDate, symbol, tier, ladder.strikes[tier], ladder.samplesBps),
+          dailySpec(lockDate, settleDate, symbol, tier, ladder.strikes[tier], ladder.samplesBps),
         );
       }
     } catch (err) {
@@ -129,7 +130,7 @@ export const dailyHandler = async () => {
     }
   }
 
-  logger.info("daily markets", { lockDate: date, settleDate, count: specs.length });
+  logger.info("daily markets", { createdOn: date, lockDate, settleDate, count: specs.length });
 
   const result = await ensureMarkets(
     program,

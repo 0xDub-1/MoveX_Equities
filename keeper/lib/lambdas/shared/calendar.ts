@@ -206,3 +206,16 @@ export function hourlySlots(date: string): HourlySlot[] {
 
   return slots;
 }
+
+/**
+ * Lock and settle dates for a daily market created on `createdOn`.
+ *
+ * It locks at the close of the next session and settles at the close of the
+ * one after, which keeps deposits open for roughly 24 hours. Locking at the
+ * close of the creation day instead would leave five minutes between the
+ * 15:55 creation run and the lock, which is not a window anyone can join.
+ */
+export function dailyMarketDates(createdOn: string): { lockDate: string; settleDate: string } {
+  const lockDate = nextTradingDay(createdOn);
+  return { lockDate, settleDate: nextTradingDay(lockDate) };
+}
