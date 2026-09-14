@@ -254,33 +254,46 @@ export const handler = async () => {
         continue;
       }
 
-        try {
-          await program.methods
-            .deposit(SIDE_VARIANT[side], bn(amount))
-            .accounts({
-              user: w.keypair.publicKey,
-              market,
-              position,
-              vault,
-              userTokenAccount: w.ata,
-              quoteMint: mint,
-              tokenProgram: TOKEN_PROGRAM_ID,
-              systemProgram: SystemProgram.programId,
-            })
-            .signers([w.keypair])
-            .rpc();
-          if (side === "above") abovePool += amount;
-          else belowPool += amount;
-          backers++;
-          deposited.push(`${label}:${side}:${w.index}`);
-        } catch (err) {
-          logger.warn("deposit failed", {
-            label,
-            wallet: w.index,
-            side,
-            error: err instanceof Error ? err.message.split("\n")[0] : String(err),
-          });
-        }
+      try {
+        await program.methods
+          .deposit(SIDE_VARIANT[side], bn(amount))
+          .accounts({
+            user: w.keypair.publicKey,
+            market,
+            position,
+            vault,
+            userTokenAccount: w.ata,
+            quoteMint: mint,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([w.keypair])
+          .rpc();
+        if (side === "above") abovePool += amount;
+        else belowPool += amount;
+        backers++;
+        deposited.push(`${label}:${side}:${w.index}`);
+      } catch (err) {
+        logger.warn("deposit failed", {
+          label,
+          wallet: w.index,
+          side,
+          error: err instanceof Error ? err.message.split("\n")[0] : String(err),
+        });
+      }
+    }
+
+    // The one outcome worth shouting about. A side left at zero voids at
+    // lock for want of a counterparty, so if every wallet was passed over
+    // this says so now rather than leaving it to be found on the board.
+    if (abovePool === 0n || belowPool === 0n) {
+      logger.error("market still has an empty side after seeding", {
+        label,
+        backers,
+        wallets: wallets.length,
+        abovePool: abovePool.toString(),
+        belowPool: belowPool.toString(),
+      });
     }
   }
 
