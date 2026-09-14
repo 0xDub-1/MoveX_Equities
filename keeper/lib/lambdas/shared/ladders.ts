@@ -52,6 +52,50 @@ export async function dailyLadder(symbol: string): Promise<Ladder> {
   return { samplesBps, strikes, strikeBps: strikes.fair };
 }
 
+/** The ET date of a bar, for deciding which pairs share a session. */
+const ET_DATE = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/New_York",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+/**
+ * Absolute hour-to-hour moves, computed only within a session.
+ *
+ * The bars arrive as one continuous array, so the last bar of Monday and the
+ * first of Tuesday sit next to each other. Measuring across that pair would
+ * put the overnight gap into the sample series: a move of daily magnitude
+ * wearing an hourly label. At six or seven bars a day that contaminates three
+ * of every twenty samples and pushes the WIDE rung up, which is precisely the
+ * daily volatility the hourly ladder exists to separate out.
+ */
+export function intradayMoves(
+  symbol: string,
+  bars: { date: string; close: number }[],
+): number[] {
+  const moves: number[] = [];
+
+  for (let i = 1; i < bars.length; i++) {
+    const prev = bars[i - 1];
+    const curr = bars[i];
+
+    if (ET_DATE.format(new Date(prev.date)) !== ET_DATE.format(new Date(curr.date))) {
+      continue; // different sessions, so this pair spans the overnight gap
+    }
+
+    if (!(prev.close > 0) || !(curr.close > 0)) {
+      throw new Error(`${symbol}: non-positive hourly close`);
+    }
+
+    const move = (Math.abs(curr.close - prev.close) / prev.close) * 100;
+    if (!Number.isFinite(move)) throw new Error(`${symbol}: non-finite hourly move`);
+    moves.push(move);
+  }
+
+  return moves;
+}
+
 /**
  * Hour-to-hour ladder for the intraday markets.
  *
@@ -62,18 +106,7 @@ export async function dailyLadder(symbol: string): Promise<Ladder> {
  */
 export async function hourlyLadder(symbol: string): Promise<Ladder> {
   const bars = await hourlyCloses(symbol, LOOKBACK_SESSIONS);
-
-  const moves: number[] = [];
-  for (let i = 1; i < bars.length; i++) {
-    const prev = bars[i - 1].close;
-    const curr = bars[i].close;
-    if (!(prev > 0) || !(curr > 0)) {
-      throw new Error(`${symbol}: non-positive hourly close`);
-    }
-    const move = (Math.abs(curr - prev) / prev) * 100;
-    if (!Number.isFinite(move)) throw new Error(`${symbol}: non-finite hourly move`);
-    moves.push(move);
-  }
+  const moves = intradayMoves(symbol, bars);
 
   const samplesBps = moves
     .slice(-LOOKBACK_SESSIONS)
