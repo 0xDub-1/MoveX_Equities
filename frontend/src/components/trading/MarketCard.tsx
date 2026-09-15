@@ -25,6 +25,7 @@ import {
   samplesCleared,
   sideAt,
   signedMovePct,
+  strikeBand,
   type MarketPhase,
   type MarketView,
   type PriceFeedView,
@@ -35,6 +36,7 @@ import { Badge, Countdown } from "@/components/ui/primitives";
 import MoveMeter from "./MoveMeter";
 import SamplesSpark from "./SamplesSpark";
 import SideSplit, { SIDE_TEXT } from "./SideSplit";
+import StrikeRail from "./StrikeRail";
 
 function LiveBlock({ market, feed }: { market: MarketView; feed: PriceFeedView | undefined }) {
   const price = feed?.price;
@@ -132,6 +134,7 @@ export default function MarketCard({
   const open = phase === "deposits" || phase === "awaiting-lock";
   const cleared = samplesCleared(market);
   const unit = market.kind === "daily" ? "sessions" : "hours";
+  const band = strikeBand(market, feed?.price);
 
   return (
     <Link
@@ -164,6 +167,9 @@ export default function MarketCard({
         Will {market.symbol} move more than{" "}
         <span className="font-mono tabular">{fmtBps(market.strikeBps)}</span>?
       </h3>
+
+      {/* The same question in prices, which is the form it is decided in. */}
+      {band && <StrikeRail band={band} className="mt-3 border-t border-line-1 pt-3" />}
 
       <div className="mt-3.5 flex items-end gap-3">
         <SamplesSpark

@@ -22,6 +22,7 @@ import {
   TIER_META,
   priceToNumber,
   signedMovePct,
+  thresholdPrices,
   type MarketState,
   type Side,
   type Tier,
@@ -92,20 +93,24 @@ export default function MoveGauge({
             : "below"
           : null;
 
+    // Shared with the rails on the board, so the two never disagree over a
+    // cent on the same market.
+    const { lower, upper } = thresholdPrices(ref, strikeBps);
+
     return {
       ref,
       refNumber,
       move,
       half,
-      lower: refNumber * (1 - strikePct / 100),
-      upper: refNumber * (1 + strikePct / 100),
+      lower,
+      upper,
       leading,
       xL: xOf(-strikePct, half),
       xR: xOf(strikePct, half),
       xC: move !== null ? xOf(move, half) : 50,
       currentNumber: current !== undefined ? priceToNumber(current) : null,
     };
-  }, [reference, current, strikePct, siblings, state, winningSide]);
+  }, [reference, current, strikeBps, strikePct, siblings, state, winningSide]);
 
   const hasReference = model.ref > 0n;
   const resolved = state === "settled" || state === "voided";

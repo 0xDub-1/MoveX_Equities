@@ -373,11 +373,58 @@ export function leadingSide(m: MarketView, livePrice: bigint | undefined): Side 
   return null;
 }
 
+/** How far the stock has to travel from `reference` to clear the threshold. */
+export function strikeDistance(reference: bigint, strikeBps: number): number {
+  return priceToNumber(reference) * (strikeBps / 10_000);
+}
+
 /** The two prices the threshold sits at, around a reference. */
 export function thresholdPrices(reference: bigint, strikeBps: number): { lower: number; upper: number } {
   const ref = priceToNumber(reference);
-  const k = strikeBps / 10_000;
-  return { lower: ref * (1 - k), upper: ref * (1 + k) };
+  const d = strikeDistance(reference, strikeBps);
+  return { lower: ref - d, upper: ref + d };
+}
+
+export interface StrikeBand {
+  /** Below this price, YES wins. */
+  lower: number;
+  /** Above this price, YES wins. */
+  upper: number;
+  /** The price the two ends are measured from. */
+  anchor: number;
+  /** Half the band, which is what the stock has to travel, in dollars. */
+  distance: number;
+  /** True while the anchor is the live print rather than a recorded reference. */
+  provisional: boolean;
+}
+
+/**
+ * A market's threshold said in prices rather than in a percentage.
+ *
+ * Nobody holds a percentage, so this is the form the question is actually
+ * asked in: two prices, and the one they are measured from.
+ *
+ * Before lock there is no reference yet and the band is drawn around the live
+ * print, moving with it until the moment it is recorded. That is what
+ * `provisional` says, rather than passing a moving number off as a strike.
+ *
+ * Null when there is nothing honest to draw: no reference, and no lock left
+ * to record one at.
+ */
+export function strikeBand(m: MarketView, livePrice: bigint | undefined): StrikeBand | null {
+  const provisional = m.referencePrice <= 0n;
+  const reference = provisional ? livePrice : m.referencePrice;
+  if (provisional && m.state !== "open") return null;
+  if (reference === undefined || reference <= 0n) return null;
+
+  const { lower, upper } = thresholdPrices(reference, m.strikeBps);
+  return {
+    lower,
+    upper,
+    anchor: priceToNumber(reference),
+    distance: strikeDistance(reference, m.strikeBps),
+    provisional,
+  };
 }
 
 // ---------------------------------------------------------------------------

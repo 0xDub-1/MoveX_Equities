@@ -150,7 +150,7 @@ export default function MarketPage({ address }: { address: string }) {
       <BackLink />
 
       <div className="mt-5">
-        <MarketHeader market={market} phase={phase} />
+        <MarketHeader market={market} phase={phase} feed={feed} />
       </div>
 
       {/*
@@ -167,7 +167,7 @@ export default function MarketPage({ address }: { address: string }) {
             <PoolsPanel market={market} />
             <ThresholdPanel market={market} rungs={rungs} />
             <MarketTimeline market={market} phase={phase} />
-            <LadderSiblings market={market} siblings={siblings} now={now} />
+            <LadderSiblings market={market} siblings={siblings} now={now} feed={feed} />
             <MarketDetails market={market} />
           </div>
         </div>

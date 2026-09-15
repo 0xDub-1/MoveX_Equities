@@ -75,11 +75,20 @@ export function fmtCompact(value: number): string {
 // Prices and percentages
 // ---------------------------------------------------------------------------
 
-/** A price float as `$178.42`. */
-export function fmtPrice(value: number): string {
+/** A price float as `$178.42`. Under a dollar it carries four decimals. */
+export function fmtPrice(value: number, opts: { decimals?: number } = {}): string {
   if (!Number.isFinite(value) || value === 0) return "$0.00";
-  const digits = Math.abs(value) < 1 ? 4 : 2;
+  const digits = opts.decimals ?? (Math.abs(value) < 1 ? 4 : 2);
   return `$${nf(digits, digits).format(value)}`;
+}
+
+/**
+ * How far something has to travel, in dollars. Coarser than a price on
+ * purpose: a threshold of thirty one cents is thirty one cents, and the
+ * fourth decimal of it is noise a reader has to look past.
+ */
+export function fmtDistance(value: number): string {
+  return fmtPrice(value, { decimals: Math.abs(value) >= 0.1 ? 2 : 4 });
 }
 
 /** `1.55%`, optionally with an explicit sign. */

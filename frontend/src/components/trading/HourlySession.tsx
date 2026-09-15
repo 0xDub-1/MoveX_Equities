@@ -13,7 +13,7 @@ import { ChevronRight } from "lucide-react";
 
 import { fmtEtDayLong, fmtEtTime } from "@/lib/calendar";
 import { groupSummary, type MarketGroup } from "@/lib/groups";
-import { fmtBps, fmtChance, fmtMultiple, fmtPct, fmtUsdx } from "@/lib/format";
+import { fmtBps, fmtChance, fmtDistance, fmtMultiple, fmtPct, fmtUsdx } from "@/lib/format";
 import {
   PHASE_META,
   SIDE_META,
@@ -26,6 +26,7 @@ import {
   samplesCleared,
   sideAt,
   signedMovePct,
+  strikeDistance,
   type MarketPhase,
   type MarketView,
   type PriceFeedView,
@@ -249,6 +250,12 @@ export default function HourlySession({
   const summary = groupSummary(group, now);
   const total = group.markets.reduce((sum, m) => sum + pot(m), 0n);
 
+  // Every hour shares the day's threshold but records its own reference at
+  // its own lock, so the only honest way to put the group in dollars is
+  // against the live price, said as a distance rather than as two strikes.
+  const perHour =
+    feed && feed.price > 0n ? strikeDistance(feed.price, lead.strikeBps) : null;
+
   // The soonest thing this session does next, so the header carries a clock
   // even though its rows are in different states.
   const nextMoment = (() => {
@@ -284,8 +291,17 @@ export default function HourlySession({
             <span className="font-mono font-semibold tabular text-text-1">
               {fmtBps(lead.strikeBps)}
             </span>{" "}
-            within the hour? It did in {samplesCleared(lead)} of the last {lead.samplesBps.length}{" "}
-            hours.
+            within the hour?{" "}
+            {perHour !== null && (
+              <>
+                That is{" "}
+                <span className="font-mono font-semibold tabular text-text-1">
+                  {fmtDistance(perHour)}
+                </span>{" "}
+                either way from wherever it locks.{" "}
+              </>
+            )}
+            It did in {samplesCleared(lead)} of the last {lead.samplesBps.length} hours.
           </>
         }
         trailing={

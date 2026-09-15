@@ -13,14 +13,35 @@ import Link from "next/link";
 import { fmtEtDay, fmtEtTime, fmtSessionDate } from "@/lib/calendar";
 import { QUOTE_SYMBOL } from "@/lib/config";
 import { fmtBps, fmtUsdx } from "@/lib/format";
-import { TIER_META, phaseOf, pot, type MarketView } from "@/lib/market";
+import {
+  TIER_META,
+  phaseOf,
+  pot,
+  strikeBand,
+  type MarketView,
+  type PriceFeedView,
+} from "@/lib/market";
 import { cn } from "@/lib/utils";
 import { SectionHeader, Surface, TierTag } from "@/components/ui/primitives";
 import SideSplit from "@/components/trading/SideSplit";
+import StrikeRail from "@/components/trading/StrikeRail";
 
 import PhaseBadge from "./PhaseBadge";
 
-function RungCell({ market, current, now }: { market: MarketView; current: boolean; now: number }) {
+function RungCell({
+  market,
+  current,
+  now,
+  feed,
+}: {
+  market: MarketView;
+  current: boolean;
+  now: number;
+  feed: PriceFeedView | undefined;
+}) {
+  // The three rungs share a session, so the rail is what separates them:
+  // same reference price, three different pairs of strikes.
+  const band = strikeBand(market, feed?.price);
   const body = (
     <>
       {current && <span className="absolute inset-x-0 top-0 h-px bg-brand/60" aria-hidden />}
@@ -31,6 +52,7 @@ function RungCell({ market, current, now }: { market: MarketView; current: boole
       <p className="mt-3 text-[13.5px] font-semibold text-text-1">
         More than <span className="font-mono tabular">{fmtBps(market.strikeBps)}</span>?
       </p>
+      {band && <StrikeRail band={band} className="mt-2.5" />}
       <SideSplit market={market} size="sm" amounts={false} className="mt-3" />
     </>
   );
@@ -94,11 +116,13 @@ export default function LadderSiblings({
   market,
   siblings,
   now,
+  feed,
 }: {
   market: MarketView;
   /** The group this market belongs to, itself included. */
   siblings: MarketView[];
   now: number;
+  feed: PriceFeedView | undefined;
 }) {
   if (siblings.length < 2) return null;
   const daily = market.kind === "daily";
@@ -118,7 +142,7 @@ export default function LadderSiblings({
       {daily ? (
         <div className="grid grid-cols-1 gap-px bg-line-1 sm:grid-cols-3">
           {siblings.map((m) => (
-            <RungCell key={m.key} market={m} current={m.key === market.key} now={now} />
+            <RungCell key={m.key} market={m} current={m.key === market.key} now={now} feed={feed} />
           ))}
         </div>
       ) : (

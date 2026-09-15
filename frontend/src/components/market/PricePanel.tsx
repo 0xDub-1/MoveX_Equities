@@ -11,13 +11,14 @@
 import type { ReactNode } from "react";
 
 import { fmtEtDateTime } from "@/lib/calendar";
-import { fmtAgo, fmtBps, fmtPct, fmtPrice } from "@/lib/format";
+import { fmtAgo, fmtBps, fmtDistance, fmtPct, fmtPrice } from "@/lib/format";
 import {
   SIDE_META,
   leadingSide,
   moveBps,
   priceToNumber,
   signedMovePct,
+  strikeDistance,
   type MarketPhase,
   type MarketView,
   type PriceFeedView,
@@ -66,18 +67,27 @@ function headline(
   signed: number,
   bps: number,
   measured: boolean,
+  /** Scaled 1e8, for pricing the threshold before there is a reference. */
+  livePrice: bigint | undefined,
 ): string {
   const strike = fmtBps(market.strikeBps);
   const ref = priceToNumber(market.referencePrice);
-  const delta = ref * (market.strikeBps / 10_000);
+  const delta = strikeDistance(market.referencePrice, market.strikeBps);
 
   switch (phase) {
     case "deposits":
-    case "awaiting-lock":
-      return `The reference price is recorded at lock, ${fmtEtDateTime(market.lockTs)}. From there ${market.symbol} needs to move more than ${strike}, up or down, for YES to win. Until then the band is drawn around the live price.`;
+    case "awaiting-lock": {
+      // The threshold in dollars, against the live print, because a
+      // percentage of a number nobody is looking at decides nothing.
+      const provisional =
+        livePrice !== undefined && livePrice > 0n
+          ? ` At today's price that is about ${fmtDistance(strikeDistance(livePrice, market.strikeBps))} either way.`
+          : "";
+      return `The reference price is recorded at lock, ${fmtEtDateTime(market.lockTs)}. From there ${market.symbol} needs to move more than ${strike}, up or down, for YES to win.${provisional} Until then the band is drawn around the live price.`;
+    }
     case "live":
     case "awaiting-settle": {
-      const need = `${market.symbol} needs to move more than ${strike} from ${fmtPrice(ref)}, that is ${fmtPrice(delta)} up or down, for YES to win.`;
+      const need = `${market.symbol} needs to move more than ${strike} from ${fmtPrice(ref)}, that is ${fmtDistance(delta)} up or down, for YES to win.`;
       if (!measured || !leading) return `${need} Waiting for a live price.`;
       const tail = phase === "awaiting-settle" ? " Settlement is waiting on the crank." : "";
       return `${need} So far it has moved ${fmtPct(signed, { signed: true })}, so ${SIDE_META[leading].label} is winning.${tail}`;
@@ -149,7 +159,7 @@ export default function PricePanel({
       />
 
       <p className="px-4 pt-4 text-[14px] leading-relaxed text-text-2 sm:px-6">
-        {headline(market, phase, leading, signed, bps, measured)}
+        {headline(market, phase, leading, signed, bps, measured, feed?.price)}
       </p>
 
       <div className="px-4 pb-5 pt-6 sm:px-6">

@@ -10,8 +10,8 @@
 
 import { fmtEtDateTime } from "@/lib/calendar";
 import { VOID_GRACE_SECS } from "@/lib/config";
-import { fmtBps } from "@/lib/format";
-import type { MarketPhase, MarketView } from "@/lib/market";
+import { fmtBps, fmtDistance } from "@/lib/format";
+import { strikeBand, type MarketPhase, type MarketView, type PriceFeedView } from "@/lib/market";
 import { Badge, Countdown, Eyebrow, SideTag, TierTag } from "@/components/ui/primitives";
 
 import PhaseBadge from "./PhaseBadge";
@@ -101,11 +101,17 @@ function Clock({ market, phase }: { market: MarketView; phase: MarketPhase }) {
 export default function MarketHeader({
   market,
   phase,
+  feed,
 }: {
   market: MarketView;
   phase: MarketPhase;
+  feed: PriceFeedView | undefined;
 }) {
   const name = companyName(market.symbol);
+  // A percentage of a price nobody has in front of them is not a number you
+  // can act on. The distance is, and unlike the two strikes it barely moves
+  // while the market is still open.
+  const band = strikeBand(market, feed?.price);
 
   return (
     <header className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
@@ -128,7 +134,11 @@ export default function MarketHeader({
       </div>
 
       <div className="flex shrink-0 flex-wrap items-start gap-x-10 gap-y-5">
-        <Readout label="Threshold" value={fmtBps(market.strikeBps)} sub="either direction" />
+        <Readout
+          label="Threshold"
+          value={fmtBps(market.strikeBps)}
+          sub={band ? `${fmtDistance(band.distance)} either way` : "either direction"}
+        />
         <Clock market={market} phase={phase} />
       </div>
     </header>
