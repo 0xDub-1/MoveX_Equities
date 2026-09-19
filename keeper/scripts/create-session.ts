@@ -7,14 +7,21 @@
 // against devnet before the 09:00 run rather than during it. The lambdas are
 // idempotent and will find these markets already there.
 //
-// Creates, for the current ET date when it is a session:
-//   - the day's hourly markets, exactly what HourlyMarkets creates at 09:00
-//   - the daily ladder that locks at today's close and settles at the next
+// Creates, for one session (today by default, or --session YYYY-MM-DD):
+//   - that day's hourly markets, exactly what HourlyMarkets creates
+//   - the daily ladder that locks at that day's close and settles at the next
 //     session's close, the one DailyMarkets would have created the previous
 //     session at 15:55
 //
+// The lambdas only ever create on a trading day, by design. --session is how
+// the next session's markets get created on a weekend, after a redeploy for
+// instance, when the schedule would otherwise leave the board empty until the
+// morning backstop. init_market refuses a lock in the past, so a session that
+// has already begun only yields the markets still ahead of it.
+//
 //   RPC_URL=https://devnet.helius-rpc.com/?api-key=... npx tsx scripts/create-session.ts --dry-run
 //   RPC_URL=... npx tsx scripts/create-session.ts
+//   RPC_URL=... npx tsx scripts/create-session.ts --session 2026-09-21
 
 import { readFileSync } from "node:fs";
 import { AnchorProvider, Program, Wallet, type Idl } from "@coral-xyz/anchor";
@@ -61,12 +68,18 @@ function fmtEt(ts: number): string {
 async function main() {
   const dryRun = process.argv.includes("--dry-run");
 
-  const today = easternDate();
-  if (!isTradingDay(today)) {
-    console.log(`${today} is not a session. Nothing to create.`);
+  const flag = process.argv.indexOf("--session");
+  const requested = flag >= 0 ? process.argv[flag + 1] : undefined;
+  if (requested !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(requested)) {
+    throw new Error(`--session wants YYYY-MM-DD, got ${requested}`);
+  }
+
+  const session = requested ?? easternDate();
+  if (!isTradingDay(session)) {
+    console.log(`${session} is not a session. Nothing to create.`);
     return;
   }
-  const next = nextTradingDay(today);
+  const next = nextTradingDay(session);
 
   const keypair = Keypair.fromSecretKey(
     Uint8Array.from(JSON.parse(readFileSync(KEYPAIR_PATH, "utf8"))),
@@ -79,15 +92,15 @@ async function main() {
 
   console.log(`rpc        ${RPC_URL.replace(/api-key=.*/, "api-key=***")}`);
   console.log(`authority  ${keypair.publicKey.toBase58()}`);
-  console.log(`today      ${today}, next session ${next}\n`);
+  console.log(`session    ${session}, next session ${next}\n`);
 
-  // -- hourly, today ----------------------------------------------------------
+  // -- hourly, for the session ------------------------------------------------
   const hourly = await hourlyLadder(HOURLY_TICKER);
-  const specs: MarketSpec[] = hourlySpecs(today, HOURLY_TICKER, hourly.strikeBps, hourly.samplesBps);
+  const specs: MarketSpec[] = hourlySpecs(session, HOURLY_TICKER, hourly.strikeBps, hourly.samplesBps);
   console.log(`hourly ${HOURLY_TICKER}: FAIR ${(hourly.strikeBps / 100).toFixed(2)}%`);
   console.log(`  samples ${hourly.samplesBps.join(" ")}`);
 
-  // -- daily, locking at today's close ----------------------------------------
+  // -- daily, locking at the session's close ----------------------------------
   for (const symbol of PUBLISHED_TICKERS) {
     const ladder = await dailyLadder(symbol);
     console.log(
@@ -96,7 +109,7 @@ async function main() {
     );
     console.log(`  samples ${ladder.samplesBps.join(" ")}`);
     for (const tier of DAILY_RUNGS[symbol] ?? ["fair"]) {
-      specs.push(dailySpec(today, next, symbol, tier, ladder.strikes[tier], ladder.samplesBps));
+      specs.push(dailySpec(session, next, symbol, tier, ladder.strikes[tier], ladder.samplesBps));
     }
   }
 

@@ -81,7 +81,21 @@ export const handler = async () => {
     logger.error("calendar cannot vouch for today", { today });
     return { deposited: [], claimed: [] };
   }
+  return seedMarkets(today);
+};
 
+/**
+ * Funds both sides of every market `candidates(today)` names and claims what
+ * the seed wallets have won.
+ *
+ * The handler gates this on a trading day. The local script does not, which
+ * is how the next session's markets get their seed over a weekend: the
+ * candidates for a Saturday already include Monday's hours and the ladder
+ * that locks at Monday's close.
+ */
+export async function seedMarkets(
+  today: string,
+): Promise<{ deposited: string[]; claimed: string[] }> {
   const program = await getProgram();
   const publisher = await getKeypair();
   const connection = program.provider.connection;
@@ -379,4 +393,4 @@ export const handler = async () => {
 
   logger.info("seeder result", { deposited: deposited.length, claimed: claimed.length });
   return { deposited, claimed };
-};
+}
