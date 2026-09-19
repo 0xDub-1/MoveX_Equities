@@ -203,9 +203,24 @@ export const TIER_VARIANT = {
   wide: { wide: {} },
 } as const;
 
-export function positionPda(programId: PublicKey, market: PublicKey, user: PublicKey): PublicKey {
+export type SideKey = "above" | "below";
+
+export const SIDES: readonly SideKey[] = ["above", "below"];
+
+const SIDE_SEED: Record<SideKey, Buffer> = {
+  above: Buffer.from("above"),
+  below: Buffer.from("below"),
+};
+
+/** One position per user, market and side: the side is in the address. */
+export function positionPda(
+  programId: PublicKey,
+  market: PublicKey,
+  user: PublicKey,
+  side: SideKey,
+): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("position"), market.toBuffer(), user.toBuffer()],
+    [Buffer.from("position"), market.toBuffer(), user.toBuffer(), SIDE_SEED[side]],
     programId,
   )[0];
 }

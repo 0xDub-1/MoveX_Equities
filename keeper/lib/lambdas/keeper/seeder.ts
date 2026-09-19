@@ -6,14 +6,14 @@
 // the seed wallets have won, so markets resolve instead of voiding and every
 // instruction in the lifecycle runs against the chain each day.
 //
-// Three wallets derived from the publisher key, each spending its daily
+// Six wallets derived from the publisher key, each spending its daily
 // faucet allowance across the day's markets. Side and amount are random on
 // each first deposit, with one rule: an empty side is always filled first,
 // so no market is left one-sided by the draw.
 //
-// Idempotent per wallet and market. A wallet that already holds a position
-// on a market is skipped, so a retried run never deposits twice and real
-// deposits are never displaced.
+// Idempotent per wallet, market and side. A wallet that already holds a
+// position on a market is skipped, so a retried run never deposits twice
+// and real deposits are never displaced.
 //
 // Transaction fees are paid by the publisher, which is the provider wallet.
 // The seed wallets need SOL only for rent on their own accounts, which this
@@ -30,6 +30,7 @@ import {
 
 import { CalendarCoverageError, easternDate, isTradingDay } from "../shared/calendar";
 import { candidates } from "../shared/candidates";
+import { LIVE_CUTOFF_SECS } from "../shared/config";
 import {
   DEPOSITORS_PER_MARKET,
   FAUCET_COOLDOWN_SECS,
@@ -42,6 +43,7 @@ import {
   shuffle,
 } from "../shared/seeding";
 import {
+  SIDES,
   SIDE_VARIANT,
   bn,
   faucetClaimPda,
@@ -175,6 +177,12 @@ export const handler = async () => {
     vault: PublicKey;
     above: bigint;
     below: bigint;
+    /**
+     * A locked market with one side still empty. Deposits during the window
+     * are capped, so this is not a place the protocol plays; it puts one
+     * deposit on the empty side so the market can resolve, and nothing more.
+     */
+    rescue: boolean;
   }
 
   const toFund: Target[] = [];
@@ -193,19 +201,34 @@ export const handler = async () => {
       continue;
     }
     const state = Object.keys(m.state)[0];
+    const above = BigInt(m.abovePool.toString());
+    const below = BigInt(m.belowPool.toString());
     const target: Target = {
       label,
       market,
       vault: vaultPda(program.programId, market),
-      above: BigInt(m.abovePool.toString()),
-      below: BigInt(m.belowPool.toString()),
+      above,
+      below,
+      rescue: false,
     };
 
-    if (state === "open" && now < Number(m.lockTs)) toFund.push(target);
-    else if (state === "settled" || state === "voided") toClaim.push(target);
+    if (state === "open" && now < Number(m.lockTs)) {
+      toFund.push(target);
+    } else if (
+      state === "locked" &&
+      m.liveDeposits &&
+      (above === 0n || below === 0n) &&
+      now < Number(m.settleTs) - LIVE_CUTOFF_SECS
+    ) {
+      // An empty side no longer voids at lock; it voids at settle if it is
+      // still empty then. There is a whole window to put one deposit on it.
+      toFund.push({ ...target, rescue: true });
+    } else if (state === "settled" || state === "voided") {
+      toClaim.push(target);
+    }
   }
 
-  // A market missing a side is one lock away from voiding for want of a
+  // A market missing a side is one settle away from voiding for want of a
   // counterparty, so it is funded before any market that already has both.
   // If the budget does run short, it runs short on depth rather than on
   // whether a market can resolve at all.
@@ -215,6 +238,7 @@ export const handler = async () => {
   logger.info("markets to work on", {
     fund: toFund.length,
     oneSided: toFund.filter((t) => oneSided(t) === 1).length,
+    rescue: toFund.filter((t) => t.rescue).length,
     claim: toClaim.length,
   });
 
@@ -225,27 +249,40 @@ export const handler = async () => {
     let belowPool = target.below;
     // Everything from here on, this market included, still to be paid for.
     const marketsRemaining = toFund.length - index;
+    // A rescue wants exactly one deposit, on the side that is empty.
+    const wanted = target.rescue ? 1 : DEPOSITORS_PER_MARKET;
     let backers = 0;
 
     // Shuffled so the wallets behind a market, and the one that lands the
     // forced side, differ from market to market.
     for (const w of shuffle(wallets)) {
-      if (backers >= DEPOSITORS_PER_MARKET) break;
+      if (backers >= wanted) break;
 
-      const position = positionPda(program.programId, market, w.keypair.publicKey);
-      try {
-        const p = await accounts.position.fetch(position);
-        if (Number(p.amount) > 0) {
-          // Already in, and it counts: otherwise every tick would pull in
-          // another wallet until all six were behind the same market.
-          backers++;
-          continue;
+      // A wallet is in if it holds either side. Positions are one per side,
+      // so both addresses are checked. Already in counts: otherwise every
+      // tick would pull in another wallet until all six were behind the
+      // same market.
+      let alreadyIn = false;
+      for (const s of SIDES) {
+        try {
+          const p = await accounts.position.fetch(
+            positionPda(program.programId, market, w.keypair.publicKey, s),
+          );
+          if (Number(p.amount) > 0) {
+            alreadyIn = true;
+            break;
+          }
+        } catch {
+          // No position on that side.
         }
-      } catch {
-        // No position yet: proceed.
+      }
+      if (alreadyIn) {
+        backers++;
+        continue;
       }
 
       const side = chooseSide(abovePool, belowPool);
+      const position = positionPda(program.programId, market, w.keypair.publicKey, side);
       const balance = (await getAccount(connection, w.ata)).amount;
       const amount = depositAmount(balance, marketsRemaining);
 
@@ -272,7 +309,7 @@ export const handler = async () => {
         if (side === "above") abovePool += amount;
         else belowPool += amount;
         backers++;
-        deposited.push(`${label}:${side}:${w.index}`);
+        deposited.push(`${label}:${side}:${w.index}${target.rescue ? ":rescue" : ""}`);
       } catch (err) {
         logger.warn("deposit failed", {
           label,
@@ -284,7 +321,7 @@ export const handler = async () => {
     }
 
     // The one outcome worth shouting about. A side left at zero voids at
-    // lock for want of a counterparty, so if every wallet was passed over
+    // settle for want of a counterparty, so if every wallet was passed over
     // this says so now rather than leaving it to be found on the board.
     if (abovePool === 0n || belowPool === 0n) {
       logger.error("market still has an empty side after seeding", {
@@ -298,41 +335,43 @@ export const handler = async () => {
   }
 
   // ---- resolved: claim what is ours -------------------------------------------
-  // Every wallet, not a subset: which of them is holding a winning position
-  // is whatever the draw did on the way in, and an unclaimed one is money
-  // the next day's markets are counting on.
+  // Every wallet and both sides, not a subset: which of them is holding a
+  // winning position is whatever the draw did on the way in, and an
+  // unclaimed one is money the next day's markets are counting on.
   for (const { label, market, vault } of toClaim) {
     for (const w of wallets) {
-      const position = positionPda(program.programId, market, w.keypair.publicKey);
-      let p: any;
-      try {
-        p = await accounts.position.fetch(position);
-      } catch {
-        continue; // never deposited here
-      }
-      if (p.claimed || Number(p.amount) === 0) continue;
+      for (const side of SIDES) {
+        const position = positionPda(program.programId, market, w.keypair.publicKey, side);
+        let p: any;
+        try {
+          p = await accounts.position.fetch(position);
+        } catch {
+          continue; // never deposited on this side
+        }
+        if (p.claimed || Number(p.amount) === 0) continue;
 
-      // A losing position has nothing to claim and the program says so.
-      // Trying is cheaper than working out the winner client-side.
-      try {
-        await program.methods
-          .claim()
-          .accounts({
-            user: w.keypair.publicKey,
-            market,
-            position,
-            vault,
-            userTokenAccount: w.ata,
-            quoteMint: mint,
-            tokenProgram: TOKEN_PROGRAM_ID,
-          })
-          .signers([w.keypair])
-          .rpc();
-        claimed.push(`${label}:${w.index}`);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!/NotOnWinningSide|AlreadyClaimed/.test(msg)) {
-          logger.warn("claim failed", { label, wallet: w.index, error: msg.split("\n")[0] });
+        // A losing position has nothing to claim and the program says so.
+        // Trying is cheaper than working out the winner client-side.
+        try {
+          await program.methods
+            .claim()
+            .accounts({
+              user: w.keypair.publicKey,
+              market,
+              position,
+              vault,
+              userTokenAccount: w.ata,
+              quoteMint: mint,
+              tokenProgram: TOKEN_PROGRAM_ID,
+            })
+            .signers([w.keypair])
+            .rpc();
+          claimed.push(`${label}:${side}:${w.index}`);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (!/NotOnWinningSide|AlreadyClaimed/.test(msg)) {
+            logger.warn("claim failed", { label, wallet: w.index, side, error: msg.split("\n")[0] });
+          }
         }
       }
     }

@@ -57,6 +57,12 @@ function market(
     quoteMint: QUOTE_MINT,
     treasury: PublicKey.default,
     feeCollected: false,
+    liveAbove: { amount: 0n, floor: 0n, excess: 0n },
+    liveBelow: { amount: 0n, floor: 0n, excess: 0n },
+    liveDeposits: true,
+    liveMaxMultipleBps: 20_000,
+    liveCapExp: 2,
+    liveCutoffSecs: 120,
     ...fields,
   };
 }
@@ -159,6 +165,7 @@ export function fixturePosition(m: MarketView, side: Side, amount: bigint): Posi
     marketKey: m.key,
     side,
     amount,
+    live: { amount: 0n, floor: 0n, excess: 0n },
     claimed: false,
   };
 }

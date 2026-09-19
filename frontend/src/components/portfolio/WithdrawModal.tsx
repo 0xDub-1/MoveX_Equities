@@ -13,7 +13,7 @@ import { useState } from "react";
 import { fmtEtDateTime } from "@/lib/calendar";
 import { QUOTE_DECIMALS } from "@/lib/config";
 import { fmtUsdx, toBase } from "@/lib/format";
-import { isDepositable, type MarketView } from "@/lib/market";
+import { isDepositable, type MarketView, type Side } from "@/lib/market";
 import { cn } from "@/lib/utils";
 import { Modal } from "@/components/ui/Modal";
 import { Button, Eyebrow, SideTag, Stat } from "@/components/ui/primitives";
@@ -47,7 +47,7 @@ export default function WithdrawModal({
   now: number;
   pending: boolean;
   onClose: () => void;
-  onWithdraw: (market: MarketView, amount: bigint) => Promise<string | null>;
+  onWithdraw: (market: MarketView, side: Side, amount: bigint) => Promise<string | null>;
 }) {
   const [text, setText] = useState("");
 
@@ -70,7 +70,7 @@ export default function WithdrawModal({
 
   const submit = async () => {
     if (!row || amount === null || !valid) return;
-    const signature = await onWithdraw(row.market, amount);
+    const signature = await onWithdraw(row.market, row.position.side, amount);
     if (signature) close();
   };
 

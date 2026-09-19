@@ -5,14 +5,15 @@
 // =============================================================================
 //
 // Every Position account owned by the connected wallet, found by a memcmp on
-// the owner field just past the discriminator.
+// the owner field just past the discriminator. A wallet may hold one
+// position per side of a market, so a market can come back with two.
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { PublicKey } from "@solana/web3.js";
 
 import { POLL_MS } from "@/lib/config";
-import { decodePosition, type PositionView } from "@/lib/market";
+import { decodePosition, type PositionView, type Side } from "@/lib/market";
 
 import { useProgram } from "./useProgram";
 
@@ -36,12 +37,24 @@ export function usePositions(owner: PublicKey | null) {
   });
 }
 
-/** The connected wallet's position on one market, if any. */
+/** The connected wallet's positions on one market, by side. */
+export type Held = Partial<Record<Side, PositionView>>;
+
+/**
+ * The connected wallet's positions on one market. `held` carries only the
+ * ones with a stake: a fully withdrawn position stays on chain with a zero
+ * balance and is no position for our purposes.
+ */
 export function usePosition(marketKey: string | undefined, owner: PublicKey | null) {
   const query = usePositions(owner);
-  const position = useMemo(
-    () => query.data?.find((p) => p.marketKey === marketKey),
+  const positions = useMemo(
+    () => query.data?.filter((p) => p.marketKey === marketKey) ?? [],
     [query.data, marketKey],
   );
-  return { ...query, position };
+  const held = useMemo<Held>(() => {
+    const out: Held = {};
+    for (const p of positions) if (p.amount > 0n) out[p.side] = p;
+    return out;
+  }, [positions]);
+  return { ...query, positions, held };
 }

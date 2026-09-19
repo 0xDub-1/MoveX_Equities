@@ -15,7 +15,13 @@ import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import type { Program } from "@coral-xyz/anchor";
 
 import { easternTimestamp, hourlySlots, closeMinutes } from "./calendar";
-import { FEE_BPS } from "./config";
+import {
+  FEE_BPS,
+  LIVE_CAP_EXP,
+  LIVE_CUTOFF_SECS,
+  LIVE_DEPOSITS,
+  LIVE_MAX_MULTIPLE_BPS,
+} from "./config";
 import { RETRY_DELAY_MS, shouldRetrySend } from "./sending";
 import { bn, marketPda, priceFeedPda, sessionBytes, underlyingBytes, vaultPda, TIER_VARIANT } from "./solana";
 
@@ -82,6 +88,12 @@ export async function ensureMarkets(
             // i64 in the IDL, so BN rather than a native number.
             lockTs: bn(spec.lockTs),
             settleTs: bn(spec.settleTs),
+            // The live round, frozen into the market. A daily market carries
+            // the overnight gap, so its cap decays faster than an hourly one.
+            liveDeposits: LIVE_DEPOSITS,
+            liveMaxMultipleBps: LIVE_MAX_MULTIPLE_BPS,
+            liveCapExp: LIVE_CAP_EXP[spec.kind],
+            liveCutoffSecs: LIVE_CUTOFF_SECS,
           })
           .accounts({
             authority: program.provider.publicKey!,

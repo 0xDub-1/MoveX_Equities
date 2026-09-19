@@ -12,6 +12,7 @@ import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { PROGRAM_ID, QUOTE_MINT } from "./config";
 
 export type Tier = "tight" | "fair" | "wide";
+export type SideKey = "above" | "below";
 
 /** Ticker as the program stores it: ASCII, right-padded with spaces to 8. */
 export function underlyingBytes(symbol: string): Buffer {
@@ -40,6 +41,11 @@ const TIER_SEED: Record<Tier, Buffer> = {
   wide: Buffer.from("wide"),
 };
 
+const SIDE_SEED: Record<SideKey, Buffer> = {
+  above: Buffer.from("above"),
+  below: Buffer.from("below"),
+};
+
 export function priceFeedPda(symbol: string): PublicKey {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("price_feed"), underlyingBytes(symbol)],
@@ -58,9 +64,13 @@ export function vaultPda(market: PublicKey): PublicKey {
   return PublicKey.findProgramAddressSync([Buffer.from("vault"), market.toBuffer()], PROGRAM_ID)[0];
 }
 
-export function positionPda(market: PublicKey, user: PublicKey): PublicKey {
+/**
+ * One position per user, market and side. The side is in the address, so a
+ * wallet holding both sides holds two of these.
+ */
+export function positionPda(market: PublicKey, user: PublicKey, side: SideKey): PublicKey {
   return PublicKey.findProgramAddressSync(
-    [Buffer.from("position"), market.toBuffer(), user.toBuffer()],
+    [Buffer.from("position"), market.toBuffer(), user.toBuffer(), SIDE_SEED[side]],
     PROGRAM_ID,
   )[0];
 }

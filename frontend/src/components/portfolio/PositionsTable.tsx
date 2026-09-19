@@ -194,7 +194,7 @@ function RowActions({
   onWithdraw: (row: PositionRow) => void;
   onShare: (row: PositionRow) => void;
 }) {
-  const { market, phase, claimable } = row;
+  const { market, phase, claimable, position } = row;
   const shareable = cardDataOf(row) !== null;
   return (
     <div className="flex flex-wrap items-center justify-end gap-1.5">
@@ -213,7 +213,7 @@ function RowActions({
           size="sm"
           variant="primary"
           loading={actions.isPending(market, "claim")}
-          onClick={() => void actions.claim(market, claimable)}
+          onClick={() => void actions.claim(market, position.side, claimable)}
         >
           Claim
         </Button>

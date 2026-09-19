@@ -15,7 +15,9 @@ import { BorshAccountsCoder, utils } from "@coral-xyz/anchor";
 
 import idl from "../lib/lambdas/shared/idl/movex_equities.json";
 
-const PROGRAM = new PublicKey("9j2X63EpuSxBSqfMKNrcbQUFzzrXiU8ok2PbUYucZ8zL");
+// The program id travels with the IDL, so a redeploy is one copy of the IDL
+// rather than a hunt for hardcoded addresses.
+const PROGRAM = new PublicKey((idl as { address: string }).address);
 const url = process.env.RPC_URL || "https://api.devnet.solana.com";
 
 /** Underlying and session are fixed width, padded with spaces. */

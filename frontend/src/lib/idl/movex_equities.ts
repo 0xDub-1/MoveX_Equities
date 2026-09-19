@@ -100,6 +100,11 @@ export type MovexEquities = {
               {
                 "kind": "account",
                 "path": "user"
+              },
+              {
+                "kind": "account",
+                "path": "position.side",
+                "account": "position"
               }
             ]
           }
@@ -118,6 +123,217 @@ export type MovexEquities = {
         {
           "name": "tokenProgram",
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claimForOwner",
+      "docs": [
+        "Pays a resolved position to its owner's token account. Anyone may",
+        "call it: the destination is derived from the owner, so nothing can",
+        "be sent anywhere else."
+      ],
+      "discriminator": [
+        89,
+        135,
+        254,
+        26,
+        255,
+        89,
+        179,
+        92
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Pays for the owner's token account if it does not exist yet."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "owner",
+          "docs": [
+            "position and to derive the token account the payout goes to."
+          ]
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.underlying",
+                "account": "market"
+              },
+              {
+                "kind": "account",
+                "path": "market.sessionDate",
+                "account": "market"
+              },
+              {
+                "kind": "account",
+                "path": "market.tier",
+                "account": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "account",
+                "path": "position.side",
+                "account": "position"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "ownerTokenAccount",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "quoteMint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "quoteMint"
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associatedTokenProgram",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": []
@@ -202,7 +418,9 @@ export type MovexEquities = {
     {
       "name": "deposit",
       "docs": [
-        "Deposits into ABOVE or BELOW. Open until the market locks."
+        "Deposits into ABOVE or BELOW. Before lock at full weight; after lock,",
+        "where the market allows it, under a cap that decays to the deposit",
+        "less the fee at settlement."
       ],
       "discriminator": [
         242,
@@ -256,6 +474,10 @@ export type MovexEquities = {
         },
         {
           "name": "position",
+          "docs": [
+            "One per user, market and side. The side is in the address, so a user",
+            "holding both sides holds two of these and neither can touch the other."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -279,6 +501,10 @@ export type MovexEquities = {
               {
                 "kind": "account",
                 "path": "user"
+              },
+              {
+                "kind": "arg",
+                "path": "side"
               }
             ]
           }
@@ -674,7 +900,7 @@ export type MovexEquities = {
     {
       "name": "lock",
       "docs": [
-        "Freezes deposits and records the reference price. Permissionless."
+        "Records the reference price and closes withdrawals. Permissionless."
       ],
       "discriminator": [
         21,
@@ -740,7 +966,8 @@ export type MovexEquities = {
     {
       "name": "settle",
       "docs": [
-        "Records the settlement price and picks a side. Permissionless."
+        "Records the settlement price and picks a side, or voids a market",
+        "whose losing side is empty. Permissionless."
       ],
       "discriminator": [
         175,
@@ -1018,6 +1245,11 @@ export type MovexEquities = {
               {
                 "kind": "account",
                 "path": "user"
+              },
+              {
+                "kind": "account",
+                "path": "position.side",
+                "account": "position"
               }
             ]
           }
@@ -1246,31 +1478,56 @@ export type MovexEquities = {
     },
     {
       "code": 6026,
+      "name": "liveDepositsDisabled",
+      "msg": "This market does not accept deposits after lock"
+    },
+    {
+      "code": 6027,
+      "name": "liveCutoffReached",
+      "msg": "Too close to settlement to deposit"
+    },
+    {
+      "code": 6028,
+      "name": "liveMaxMultipleInvalid",
+      "msg": "Live maximum multiple must cover the deposit less the fee and not exceed the ceiling"
+    },
+    {
+      "code": 6029,
+      "name": "liveCapExpInvalid",
+      "msg": "Live cap exponent exceeds the maximum"
+    },
+    {
+      "code": 6030,
+      "name": "liveCutoffTooShort",
+      "msg": "Live cutoff is shorter than the minimum"
+    },
+    {
+      "code": 6031,
       "name": "alreadyClaimed",
       "msg": "This position has already been claimed"
     },
     {
-      "code": 6027,
+      "code": 6032,
       "name": "notOnWinningSide",
       "msg": "This position is not on the winning side"
     },
     {
-      "code": 6028,
+      "code": 6033,
       "name": "nothingToClaim",
       "msg": "There is nothing to claim"
     },
     {
-      "code": 6029,
+      "code": 6034,
       "name": "feeAlreadyCollected",
       "msg": "The protocol fee has already been collected"
     },
     {
-      "code": 6030,
+      "code": 6035,
       "name": "faucetCooldownActive",
       "msg": "Faucet cooldown has not elapsed yet"
     },
     {
-      "code": 6031,
+      "code": 6036,
       "name": "faucetAmountInvalid",
       "msg": "Faucet claim amount is outside the allowed range"
     }
@@ -1413,6 +1670,66 @@ export type MovexEquities = {
           {
             "name": "settleTs",
             "type": "i64"
+          },
+          {
+            "name": "liveDeposits",
+            "docs": [
+              "Whether deposits stay open after lock, under the cap below."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "liveMaxMultipleBps",
+            "docs": [
+              "The most a live deposit may be paid, in basis points of itself, for",
+              "one landing the instant the market locks. 20_000 is twice the deposit."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "liveCapExp",
+            "docs": [
+              "How fast that maximum decays across the window. 0 flat, 1 linear,",
+              "up to `MAX_LIVE_CAP_EXP`."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "liveCutoffSecs",
+            "docs": [
+              "Live deposits close this many seconds before settlement."
+            ],
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "liveTotals",
+      "docs": [
+        "Deposits that arrived after lock, reduced to the three integers the",
+        "payout needs. Kept on the market per side, and on each position for its",
+        "own share, accumulated with exactly the same terms so that every division",
+        "at claim time is by a sum of what it distributes.",
+        "",
+        "`floor` is the least this money is paid back if its side wins, the",
+        "deposits less the fee. `excess` is how much more its cap allows, which is",
+        "what decays with the time left when each deposit landed."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "floor",
+            "type": "u64"
+          },
+          {
+            "name": "excess",
+            "type": "u64"
           }
         ]
       }
@@ -1531,11 +1848,33 @@ export type MovexEquities = {
           },
           {
             "name": "abovePool",
+            "docs": [
+              "Everything deposited on each side, before and after lock."
+            ],
             "type": "u64"
           },
           {
             "name": "belowPool",
             "type": "u64"
+          },
+          {
+            "name": "liveAbove",
+            "docs": [
+              "The part of each pool that arrived after lock, with its cap."
+            ],
+            "type": {
+              "defined": {
+                "name": "liveTotals"
+              }
+            }
+          },
+          {
+            "name": "liveBelow",
+            "type": {
+              "defined": {
+                "name": "liveTotals"
+              }
+            }
           },
           {
             "name": "winningSide",
@@ -1573,7 +1912,7 @@ export type MovexEquities = {
           {
             "name": "lockTs",
             "docs": [
-              "Deposits close at this time and the reference price is taken."
+              "Withdrawals close at this time and the reference price is taken."
             ],
             "type": "i64"
           },
@@ -1583,6 +1922,37 @@ export type MovexEquities = {
               "The settlement price is taken at this time."
             ],
             "type": "i64"
+          },
+          {
+            "name": "liveDeposits",
+            "docs": [
+              "Whether deposits stay open after lock. The switch for the whole live",
+              "round: off, and the market behaves exactly as one without it."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "liveMaxMultipleBps",
+            "docs": [
+              "The most a live deposit may be paid, in basis points of itself, for",
+              "one landing the instant the market locks. Decays from there."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "liveCapExp",
+            "docs": [
+              "How fast that maximum decays over the window. Zero is flat."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "liveCutoffSecs",
+            "docs": [
+              "Live deposits close this many seconds before settlement, so nothing",
+              "can be placed knowing the print the market will settle on."
+            ],
+            "type": "u32"
           },
           {
             "name": "bump",
@@ -1631,9 +2001,9 @@ export type MovexEquities = {
           {
             "name": "side",
             "docs": [
-              "Which pool the deposit sits in. One position per user per market, so",
-              "a user picks a side rather than holding both. Once `amount` returns",
-              "to zero the side is free to change again."
+              "Which pool this position sits in. The side is part of the account's",
+              "address, so one user may hold one position per side of a market and",
+              "the two never mix."
             ],
             "type": {
               "defined": {
@@ -1643,7 +2013,21 @@ export type MovexEquities = {
           },
           {
             "name": "amount",
+            "docs": [
+              "Everything deposited, before and after lock."
+            ],
             "type": "u64"
+          },
+          {
+            "name": "live",
+            "docs": [
+              "The part of `amount` that arrived after lock, with its cap."
+            ],
+            "type": {
+              "defined": {
+                "name": "liveTotals"
+              }
+            }
           },
           {
             "name": "claimed",

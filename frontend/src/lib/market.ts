@@ -35,6 +35,23 @@ export type MarketPhase =
   | "settled"
   | "voided";
 
+/**
+ * Deposits that arrived after lock, reduced to the three integers the payout
+ * needs. Kept on the market per side and on each position for its own share,
+ * accumulated with exactly the same terms, so every division at claim time
+ * is by a sum of what it distributes. Mirrors `LiveTotals` in state.rs.
+ */
+export interface LiveTotals {
+  /** USDX base units. */
+  amount: bigint;
+  /** The least this money is paid back if its side wins: amount less fee. */
+  floor: bigint;
+  /** How much more its cap allows. Decays with the time left at deposit. */
+  excess: bigint;
+}
+
+export const EMPTY_LIVE: LiveTotals = { amount: 0n, floor: 0n, excess: 0n };
+
 export interface MarketView {
   address: PublicKey;
   /** base58 of `address`, for keys and links. */
@@ -63,6 +80,17 @@ export interface MarketView {
   quoteMint: PublicKey;
   treasury: PublicKey;
   feeCollected: boolean;
+  /** The part of each pool that arrived after lock, with its cap. */
+  liveAbove: LiveTotals;
+  liveBelow: LiveTotals;
+  /** Whether deposits stay open after lock. */
+  liveDeposits: boolean;
+  /** Most a live deposit may be paid, in bps of itself, just after lock. */
+  liveMaxMultipleBps: number;
+  /** How fast that maximum decays across the window. Zero is flat. */
+  liveCapExp: number;
+  /** Live deposits close this many seconds before settlement. */
+  liveCutoffSecs: number;
 }
 
 export interface PositionView {
@@ -72,8 +100,10 @@ export interface PositionView {
   market: PublicKey;
   marketKey: string;
   side: Side;
-  /** USDX base units. */
+  /** USDX base units, before and after lock. */
   amount: bigint;
+  /** The part of `amount` that arrived after lock, with its cap. */
+  live: LiveTotals;
   claimed: boolean;
 }
 
@@ -96,6 +126,12 @@ export interface PriceFeedView {
 
 type RawEnum = Record<string, unknown>;
 
+interface RawLive {
+  amount: BN;
+  floor: BN;
+  excess: BN;
+}
+
 interface RawMarket {
   underlying: number[];
   sessionDate: number[];
@@ -116,6 +152,12 @@ interface RawMarket {
   feeCollected: boolean;
   lockTs: BN;
   settleTs: BN;
+  liveAbove: RawLive;
+  liveBelow: RawLive;
+  liveDeposits: boolean;
+  liveMaxMultipleBps: number;
+  liveCapExp: number;
+  liveCutoffSecs: number;
 }
 
 interface RawPosition {
@@ -123,6 +165,7 @@ interface RawPosition {
   market: PublicKey;
   side: RawEnum;
   amount: BN;
+  live: RawLive;
   claimed: boolean;
 }
 
@@ -143,6 +186,10 @@ function enumKey<T extends string>(value: RawEnum): T {
 
 function big(value: BN): bigint {
   return BigInt(value.toString());
+}
+
+function decodeLive(raw: RawLive): LiveTotals {
+  return { amount: big(raw.amount), floor: big(raw.floor), excess: big(raw.excess) };
 }
 
 export function kindOf(sessionId: string): MarketKind {
@@ -174,6 +221,12 @@ export function decodeMarket(address: PublicKey, raw: RawMarket): MarketView {
     quoteMint: raw.quoteMint,
     treasury: raw.treasury,
     feeCollected: raw.feeCollected,
+    liveAbove: decodeLive(raw.liveAbove),
+    liveBelow: decodeLive(raw.liveBelow),
+    liveDeposits: raw.liveDeposits,
+    liveMaxMultipleBps: raw.liveMaxMultipleBps,
+    liveCapExp: raw.liveCapExp,
+    liveCutoffSecs: raw.liveCutoffSecs,
   };
 }
 
@@ -186,6 +239,7 @@ export function decodePosition(address: PublicKey, raw: RawPosition): PositionVi
     marketKey: raw.market.toBase58(),
     side: enumKey<Side>(raw.side),
     amount: big(raw.amount),
+    live: decodeLive(raw.live),
     claimed: raw.claimed,
   };
 }
@@ -463,18 +517,107 @@ export function payoutMultiple(m: MarketView, side: Side, extra = 0n): number | 
   return Number(distributable(total, m.feeBps)) / Number(sidePool);
 }
 
+// ---------------------------------------------------------------------------
+// Live round
+// ---------------------------------------------------------------------------
+//
+// Deposits after lock. Money that arrives after the reference price is known
+// never dilutes the money that was there before it; beyond that the pools
+// decide. Each function here mirrors its namesake in payout.rs, in the same
+// integer arithmetic, so what the panel projects is what the program pays.
+
+const BPS = 10_000n;
+
+const bigMin = (a: bigint, b: bigint): bigint => (a < b ? a : b);
+
+export function liveOf(m: MarketView, side: Side): LiveTotals {
+  return side === "above" ? m.liveAbove : m.liveBelow;
+}
+
+/** Whether a deposit made now would land in the live round. */
+export function liveDepositsOpen(m: MarketView, nowSec: number): boolean {
+  return m.state === "locked" && m.liveDeposits && nowSec < m.settleTs - m.liveCutoffSecs;
+}
+
 /**
- * The claim the program would pay for `position`: the full stake on a voided
- * market, the pro-rata share on a settled one it won, nothing otherwise.
+ * payout.rs `live_multiple_bps`: the most a live deposit made now may be
+ * paid, in basis points of itself. `max` just after lock, `1 - fee` at
+ * settlement, shaped by the exponent between.
  */
-export function claimAmount(m: MarketView, position: PositionView): bigint {
-  if (position.claimed || position.amount === 0n) return 0n;
+export function liveMultipleBps(m: MarketView, nowSec: number): number {
+  const window = m.settleTs - m.lockTs;
+  if (window <= 0) return 10_000 - m.feeBps;
+  const remaining = Math.max(0, Math.min(window, m.settleTs - nowSec));
+  const fBps = Math.floor((remaining * 10_000) / window);
+  let fPow = 10_000;
+  for (let i = 0; i < m.liveCapExp; i++) fPow = Math.floor((fPow * fBps) / 10_000);
+  const base = 10_000 - m.feeBps;
+  return base + Math.floor(((m.liveMaxMultipleBps - base) * fPow) / 10_000);
+}
+
+/** payout.rs `live_terms`: what a live deposit is recorded as. */
+export function liveTerms(amount: bigint, feeBps: number, multipleBps: number): LiveTotals {
+  const floor = (amount * (BPS - BigInt(feeBps))) / BPS;
+  const cap = (amount * BigInt(multipleBps)) / BPS;
+  return { amount, floor, excess: cap > floor ? cap - floor : 0n };
+}
+
+/** payout.rs `live_group`: what the winning side's live money is paid as a group. */
+export function liveGroup(dist: bigint, winningPool: bigint, live: LiveTotals): bigint {
+  if (live.amount === 0n) return 0n;
+  if (winningPool - live.amount === 0n) return dist;
+  const raw = (dist * live.amount) / winningPool;
+  return bigMin(raw, live.floor + live.excess);
+}
+
+/** payout.rs `payout_live`: one live position's share of its group. */
+export function payoutLive(position: LiveTotals, group: bigint, pool: LiveTotals): bigint {
+  const floorLayer = bigMin(group, pool.floor);
+  const excessLayer = group - floorLayer;
+  const first = pool.floor > 0n ? (position.floor * floorLayer) / pool.floor : 0n;
+  const second =
+    pool.excess > 0n
+      ? (position.excess * excessLayer) / pool.excess
+      : pool.amount > 0n
+        ? (position.amount * excessLayer) / pool.amount
+        : 0n;
+  return first + second;
+}
+
+/**
+ * What the program pays for `position` on a resolved market, whether or not
+ * it has been claimed: the full stake on a voided market, the pre-lock and
+ * live shares on a settled one it won, nothing otherwise.
+ */
+export function claimValue(m: MarketView, position: PositionView): bigint {
+  if (position.amount === 0n) return 0n;
   if (m.state === "voided") return position.amount;
   if (m.state !== "settled" || !m.winningSide) return 0n;
   if (position.side !== m.winningSide) return 0n;
-  const winningPool = poolOf(m, m.winningSide);
-  if (winningPool === 0n) return 0n;
-  return (position.amount * distributable(pot(m), m.feeBps)) / winningPool;
+
+  const winner = m.winningSide;
+  const dist = distributable(pot(m), m.feeBps);
+  const winningPool = poolOf(m, winner);
+  const livePool = liveOf(m, winner);
+  const group = liveGroup(dist, winningPool, livePool);
+
+  const preLockPool = winningPool - livePool.amount;
+  const preLockAmount = position.amount - position.live.amount;
+
+  let total = 0n;
+  if (preLockAmount > 0n && preLockPool > 0n) {
+    total += (preLockAmount * (dist - group)) / preLockPool;
+  }
+  if (position.live.amount > 0n) {
+    total += payoutLive(position.live, group, livePool);
+  }
+  return total;
+}
+
+/** What a claim pays right now. Zero once claimed. */
+export function claimAmount(m: MarketView, position: PositionView): bigint {
+  if (position.claimed) return 0n;
+  return claimValue(m, position);
 }
 
 /** Realised outcome of a position on a resolved market, in base units. */
@@ -482,9 +625,39 @@ export function positionPnl(m: MarketView, position: PositionView): bigint | nul
   if (!isResolved(m) || position.amount === 0n) return null;
   if (m.state === "voided") return 0n;
   if (position.side !== m.winningSide) return -position.amount;
-  const winningPool = poolOf(m, m.winningSide);
-  if (winningPool === 0n) return 0n;
-  return (position.amount * distributable(pot(m), m.feeBps)) / winningPool - position.amount;
+  return claimValue(m, position) - position.amount;
+}
+
+/**
+ * What a deposit of `amount` on `side` made now would be paid if that side
+ * won with the pools as they stand. Before lock that is the pro-rata share;
+ * in the live round it is the same share held under the deposit's cap.
+ * Null when nothing would sit on the side.
+ */
+export function projectedPayout(
+  m: MarketView,
+  side: Side,
+  amount: bigint,
+  nowSec: number,
+): bigint | null {
+  if (amount <= 0n) return null;
+  const dist = distributable(pot(m) + amount, m.feeBps);
+  const winningPool = poolOf(m, side) + amount;
+  if (winningPool === 0n) return null;
+
+  if (!liveDepositsOpen(m, nowSec)) {
+    return (amount * dist) / winningPool;
+  }
+
+  const terms = liveTerms(amount, m.feeBps, liveMultipleBps(m, nowSec));
+  const current = liveOf(m, side);
+  const livePool: LiveTotals = {
+    amount: current.amount + terms.amount,
+    floor: current.floor + terms.floor,
+    excess: current.excess + terms.excess,
+  };
+  const group = liveGroup(dist, winningPool, livePool);
+  return payoutLive(terms, group, livePool);
 }
 
 // ---------------------------------------------------------------------------

@@ -5,9 +5,13 @@
 // =============================================================================
 //
 // What the connected wallet can do with this market right now, which depends
-// on the phase: deposit or withdraw while open, watch while live, claim once
-// settled or voided. Amounts stay in base units until the moment they are
-// displayed; nothing that goes on chain passes through a float.
+// on the phase: deposit or withdraw while open, deposit under a cap while
+// live, claim once settled or voided. Amounts stay in base units until the
+// moment they are displayed; nothing that goes on chain passes through a
+// float.
+//
+// A wallet may hold one position per side, so everything below takes the
+// positions as a pair and renders whichever exist.
 
 import { useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -18,6 +22,7 @@ import {
   fmtAgo,
   fmtBps,
   fmtChance,
+  fmtCountdown,
   fmtMultiple,
   fmtPct,
   fmtUsdx,
@@ -27,12 +32,15 @@ import {
 import {
   SIDE_META,
   claimAmount,
-  distributable,
+  claimValue,
+  liveDepositsOpen,
+  liveMultipleBps,
   moveBps,
   payoutMultiple,
   poolOf,
   poolShare,
   pot,
+  projectedPayout,
   sideAt,
   type MarketPhase,
   type MarketView,
@@ -43,7 +51,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useBalances, type Balances } from "@/hooks/useBalances";
 import { useMarketActions } from "@/hooks/useMarketActions";
-import { usePosition } from "@/hooks/usePositions";
+import { usePosition, type Held } from "@/hooks/usePositions";
 import { useProgram } from "@/hooks/useProgram";
 import { Button, Countdown, Eyebrow, InlineLink, SideTag, Skeleton, Stat } from "@/components/ui/primitives";
 import WalletButton from "@/components/ui/WalletButton";
@@ -60,12 +68,9 @@ const INPUT_SHELL =
 const INPUT =
   "h-full min-w-0 flex-1 bg-transparent font-mono tabular text-text-1 outline-none placeholder:text-text-4";
 
-/** What a winning position was paid, whether or not it has been claimed yet. */
-function settledPayout(market: MarketView, position: PositionView): bigint {
-  if (!market.winningSide) return 0n;
-  const winningPool = poolOf(market, market.winningSide);
-  if (winningPool === 0n) return 0n;
-  return (position.amount * distributable(pot(market), market.feeBps)) / winningPool;
+/** The positions a wallet holds on a market, in side order. */
+function heldList(held: Held): PositionView[] {
+  return SIDES.flatMap((s) => (held[s] ? [held[s]!] : []));
 }
 
 function Note({ children, className }: { children: ReactNode; className?: string }) {
@@ -158,6 +163,12 @@ function PositionCard({
     }
   })();
 
+  const live = position.live;
+  const preLock = position.amount - live.amount;
+  // Money placed after lock is paid under its cap, so the pool multiple only
+  // describes the part that was there before.
+  const liveCap = live.amount > 0n ? Number(live.floor + live.excess) / Number(live.amount) : null;
+
   return (
     <div className="rounded-md border border-line-2 bg-white/[0.02] px-4 py-3.5">
       <div className="flex items-center justify-between gap-3">
@@ -166,17 +177,33 @@ function PositionCard({
       </div>
       <div className="mt-3 grid grid-cols-3 gap-3">
         <Stat label="Stake" size="sm" value={fmtUsdx(position.amount)} sub={QUOTE_SYMBOL} valueClassName="font-mono" />
-        <Stat
-          label="Pays"
-          size="sm"
-          value={fmtMultiple(payoutMultiple(market, position.side))}
-          sub="if it wins"
-          valueClassName="font-mono"
-        />
+        {preLock > 0n ? (
+          <Stat
+            label="Pays"
+            size="sm"
+            value={fmtMultiple(payoutMultiple(market, position.side))}
+            sub="if it wins"
+            valueClassName="font-mono"
+          />
+        ) : (
+          <Stat
+            label="Pays at most"
+            size="sm"
+            value={fmtMultiple(liveCap)}
+            sub="placed live"
+            valueClassName="font-mono"
+          />
+        )}
         {clock && (
           <Stat label={clock.label} size="sm" value={clock.value} align="right" valueClassName="font-mono" />
         )}
       </div>
+      {preLock > 0n && live.amount > 0n && (
+        <p className="mt-2.5 font-mono text-[11px] tabular text-text-3">
+          {fmtUsdx(live.amount)} {QUOTE_SYMBOL} of it was placed after lock and pays at most{" "}
+          {fmtMultiple(liveCap)}.
+        </p>
+      )}
     </div>
   );
 }
@@ -186,18 +213,20 @@ function DepositForm({
   balances,
   held,
   actions,
+  now,
+  live,
 }: {
   market: MarketView;
   balances: Balances | undefined;
-  held: PositionView | undefined;
+  held: Held;
   actions: Actions;
+  now: number;
+  /** Whether this deposit lands after lock, under the cap. */
+  live: boolean;
 }) {
-  const [chosen, setChosen] = useState<Side>("above");
+  const [side, setSide] = useState<Side>("above");
   const [input, setInput] = useState("");
 
-  // One side per market: an open position pins the selector to its side.
-  const locked = held?.side;
-  const side: Side = locked ?? chosen;
   const label = SIDE_META[side].label;
   const strike = fmtBps(market.strikeBps);
 
@@ -224,20 +253,41 @@ function DepositForm({
     if (signature) setInput("");
   };
 
-  // The projection includes this deposit, so the multiple already reflects
-  // the user's own money landing on the side.
+  // The projection includes this deposit, so it already reflects the user's
+  // own money landing on the side, and in the live round, its cap.
   const extra = amount !== null && amount > 0n ? amount : 0n;
   const sidePoolAfter = poolOf(market, side) + extra;
-  const mineAfter = (held && held.side === side ? held.amount : 0n) + extra;
+  const mineAfter = (held[side]?.amount ?? 0n) + extra;
   const share = sidePoolAfter > 0n ? (Number(mineAfter) / Number(sidePoolAfter)) * 100 : 0;
-  const multiple = payoutMultiple(market, side, extra);
-  const payout = extra > 0n && multiple !== null ? BigInt(Math.floor(Number(extra) * multiple)) : null;
+  const payout = extra > 0n ? projectedPayout(market, side, extra, now) : null;
   const profit = payout !== null ? payout - extra : null;
+
+  const capBps = live ? liveMultipleBps(market, now) : null;
+  const closesIn = live ? market.settleTs - market.liveCutoffSecs - now : null;
 
   const total = pot(market);
 
   return (
     <div className="flex flex-col gap-5">
+      {live && (
+        <div className="rounded-md border border-below/30 bg-below/[0.06] px-3.5 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <Eyebrow>Live round</Eyebrow>
+            {closesIn !== null && (
+              <span className="font-mono text-[11px] tabular text-text-3">
+                closes in {fmtCountdown(closesIn)}
+              </span>
+            )}
+          </div>
+          <p className="mt-1.5 text-[12.5px] leading-relaxed text-text-2">
+            The reference price is already set. A deposit now counts under a cap:{" "}
+            <span className="font-mono tabular text-text-1">{fmtMultiple(capBps! / 10_000)}</span> at most
+            right now, falling towards {fmtMultiple((10_000 - market.feeBps) / 10_000)} at settlement. Money
+            placed before lock is never diluted by yours.
+          </p>
+        </div>
+      )}
+
       <div>
         <p className="text-[14px] font-semibold leading-snug text-text-1">
           Will {market.symbol} move more than <span className="font-mono tabular">{strike}</span>?
@@ -245,18 +295,15 @@ function DepositForm({
         <div className="mt-2.5 grid grid-cols-2 gap-2">
           {SIDES.map((s) => {
             const selected = s === side;
-            const disabled = locked !== undefined && s !== locked;
             const chance = total > 0n ? poolShare(market, s) : null;
             return (
               <button
                 key={s}
                 type="button"
-                disabled={disabled}
                 aria-pressed={selected}
-                onClick={() => setChosen(s)}
+                onClick={() => setSide(s)}
                 className={cn(
                   "flex min-w-0 flex-col items-start rounded-md border px-3 py-3 text-left transition-colors",
-                  "disabled:cursor-not-allowed disabled:opacity-40",
                   selected && s === "above" && "border-above/70 bg-above/10",
                   selected && s === "below" && "border-below/70 bg-below/10",
                   !selected && "border-line-2 hover:border-line-3 hover:bg-white/[0.04]",
@@ -286,9 +333,9 @@ function DepositForm({
             );
           })}
         </div>
-        {locked && (
+        {held[side] && (
           <p className="mt-2 text-[12px] text-text-3">
-            Your position is on {SIDE_META[locked].label}. Withdraw it fully to switch answers.
+            You already hold {fmtUsdx(held[side]!.amount)} {QUOTE_SYMBOL} on {label}. This adds to it.
           </p>
         )}
       </div>
@@ -357,7 +404,11 @@ function DepositForm({
 
       <dl className="flex flex-col gap-1.5 rounded-md border border-line-1 bg-white/[0.015] px-3.5 py-3 font-mono text-[12px] tabular">
         <Row label={`${label} pool after deposit`} value={`${fmtUsdx(sidePoolAfter)} ${QUOTE_SYMBOL}`} />
-        <Row label={`Your share of ${label}`} value={fmtPct(share)} />
+        {live ? (
+          <Row label="Counts up to" value={fmtMultiple(capBps! / 10_000)} />
+        ) : (
+          <Row label={`Your share of ${label}`} value={fmtPct(share)} />
+        )}
         <Row
           label={`Payout if ${label} wins`}
           value={payout !== null ? `${fmtUsdx(payout)} ${QUOTE_SYMBOL}` : "--"}
@@ -365,7 +416,7 @@ function DepositForm({
         <Row
           label="Potential profit"
           value={profit !== null ? `${fmtUsdxSigned(profit)} ${QUOTE_SYMBOL}` : "--"}
-          valueClassName={profit !== null ? "text-brand" : undefined}
+          valueClassName={profit !== null ? (profit >= 0n ? "text-brand" : "text-loss") : undefined}
         />
       </dl>
 
@@ -402,14 +453,14 @@ function WithdrawForm({
 
   const submit = async () => {
     if (!valid || amount === null) return;
-    const signature = await actions.withdraw(market, amount);
+    const signature = await actions.withdraw(market, position.side, amount);
     if (signature) setText(null);
   };
 
   return (
     <div className="rounded-md border border-line-1 px-4 py-3.5">
       <div className="flex items-center justify-between gap-3">
-        <Eyebrow>Withdraw</Eyebrow>
+        <Eyebrow>Withdraw from {SIDE_META[position.side].label}</Eyebrow>
         <button
           type="button"
           onClick={() => setText(null)}
@@ -440,9 +491,7 @@ function WithdrawForm({
         </Button>
       </div>
       {error && <p className="mt-2 text-[11.5px] text-loss">{error}</p>}
-      <p className="mt-2 text-[11px] text-text-3">
-        Open until lock. A full withdrawal frees you to switch sides.
-      </p>
+      <p className="mt-2 text-[11px] text-text-3">Open until lock. Nothing can be withdrawn after it.</p>
     </div>
   );
 }
@@ -453,21 +502,29 @@ function LiveBody({
   held,
   feed,
   now,
+  balances,
+  actions,
 }: {
   market: MarketView;
   phase: MarketPhase;
-  held: PositionView | undefined;
+  held: Held;
   feed: PriceFeedView | undefined;
   now: number;
+  balances: Balances | undefined;
+  actions: Actions;
 }) {
   const price = feed?.price;
   const lead = market.referencePrice > 0n && price !== undefined ? sideAt(market, price) : null;
+  const positions = heldList(held);
+  const open = phase === "live" && liveDepositsOpen(market, now);
 
   let sentence: string;
   if (!lead) {
     sentence = "Waiting for a live price.";
-  } else if (held) {
-    sentence = lead === held.side ? "Your answer is winning right now." : "Your answer is losing right now.";
+  } else if (positions.length === 2) {
+    sentence = `You hold both answers. ${SIDE_META[lead].label} is winning right now.`;
+  } else if (positions.length === 1) {
+    sentence = lead === positions[0].side ? "Your answer is winning right now." : "Your answer is losing right now.";
   } else {
     sentence = `${SIDE_META[lead].label} is winning right now.`;
   }
@@ -478,11 +535,10 @@ function LiveBody({
 
   return (
     <div className="flex flex-col gap-4">
-      {held ? (
-        <PositionCard market={market} position={held} phase={phase} />
-      ) : (
-        <Note>You have no position in this market. Deposits closed at lock.</Note>
-      )}
+      {positions.map((p) => (
+        <PositionCard key={p.key} market={market} position={p} phase={phase} />
+      ))}
+
       <div className="rounded-md border border-line-1 px-4 py-3.5">
         <div className="flex items-center justify-between gap-3">
           <Eyebrow>Standing</Eyebrow>
@@ -494,12 +550,22 @@ function LiveBody({
         <p
           className={cn(
             "mt-2.5 text-[12.5px] leading-relaxed",
-            held && lead && lead === held.side ? "text-text-1" : "text-text-2",
+            positions.length === 1 && lead && lead === positions[0].side ? "text-text-1" : "text-text-2",
           )}
         >
           {sentence}
         </p>
       </div>
+
+      {open ? (
+        <DepositForm market={market} balances={balances} held={held} actions={actions} now={now} live />
+      ) : phase === "live" ? (
+        <Note>
+          {market.liveDeposits
+            ? `Live deposits closed ${fmtCountdown(market.liveCutoffSecs)} before settlement.`
+            : "Deposits closed at lock on this market."}
+        </Note>
+      ) : null}
     </div>
   );
 }
@@ -510,17 +576,18 @@ function SettledBody({
   actions,
 }: {
   market: MarketView;
-  held: PositionView | undefined;
+  held: Held;
   actions: Actions;
 }) {
   const winner = market.winningSide;
   const pending = actions.isPending(market, "claim");
   const bps = moveBps(market.referencePrice, market.settlementPrice);
   const outcome = `${market.symbol} moved ${fmtBps(bps)}, ${bps > market.strikeBps ? "past" : "within"} the ${fmtBps(market.strikeBps)} threshold.`;
+  const positions = heldList(held);
 
   if (!winner) return <Note>Settled.</Note>;
 
-  if (!held) {
+  if (positions.length === 0) {
     return (
       <div className="flex flex-col gap-1.5">
         <p className="text-[13px] text-text-1">Settled. {SIDE_META[winner].label} won.</p>
@@ -529,75 +596,83 @@ function SettledBody({
     );
   }
 
-  if (held.side !== winner) {
-    return (
-      <div className="rounded-md border border-line-2 px-4 py-4">
-        <Note>
-          You answered {SIDE_META[held.side].label}. {SIDE_META[winner].label} won.
-        </Note>
-        <div className="mt-3 flex items-center justify-between font-mono text-[12px] tabular">
-          <span className="text-text-3">Stake</span>
-          <span className="text-loss">
-            {fmtUsdxSigned(-held.amount)} {QUOTE_SYMBOL}
-          </span>
-        </div>
-        <p className="mt-2 text-[11.5px] text-text-3">{outcome}</p>
-      </div>
-    );
-  }
-
-  const payout = held.claimed ? settledPayout(market, held) : claimAmount(market, held);
-  const profit = payout - held.amount;
-
-  if (held.claimed) {
-    return (
-      <div className="rounded-md border border-line-2 px-4 py-4">
-        <div className="flex items-center justify-between gap-3">
-          <Eyebrow>Claimed</Eyebrow>
-          <SideTag side={winner} size="sm" />
-        </div>
-        <BigAmount amount={payout} />
-        <p className="mt-1.5 text-[11.5px] text-text-3">
-          Collected to your wallet. Stake {fmtUsdx(held.amount)} {QUOTE_SYMBOL}, profit {fmtUsdxSigned(profit)}{" "}
-          {QUOTE_SYMBOL}.
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <div
-      className={cn(
-        "rounded-md border px-4 py-4",
-        winner === "above" ? "border-above/40 bg-above/[0.06]" : "border-below/40 bg-below/[0.06]",
-      )}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <span
-          className={cn(
-            "font-mono text-[11px] font-semibold uppercase tracking-[0.16em]",
-            winner === "above" ? "text-above" : "text-below",
-          )}
-        >
-          You won
-        </span>
-        <SideTag side={winner} size="sm" />
-      </div>
-      <BigAmount amount={payout} />
-      <p className="mt-1.5 text-[11.5px] text-text-3">
-        Stake {fmtUsdx(held.amount)} {QUOTE_SYMBOL}, profit{" "}
-        <span className="text-brand">{fmtUsdxSigned(profit)}</span> {QUOTE_SYMBOL}.
-      </p>
-      <Button
-        className="mt-4"
-        variant="primary"
-        block
-        size="lg"
-        loading={pending}
-        onClick={() => void actions.claim(market, payout)}
-      >
-        Claim {fmtUsdx(payout)} {QUOTE_SYMBOL}
-      </Button>
+    <div className="flex flex-col gap-4">
+      {positions.map((p) => {
+        if (p.side !== winner) {
+          return (
+            <div key={p.key} className="rounded-md border border-line-2 px-4 py-4">
+              <Note>
+                You answered {SIDE_META[p.side].label}. {SIDE_META[winner].label} won.
+              </Note>
+              <div className="mt-3 flex items-center justify-between font-mono text-[12px] tabular">
+                <span className="text-text-3">Stake</span>
+                <span className="text-loss">
+                  {fmtUsdxSigned(-p.amount)} {QUOTE_SYMBOL}
+                </span>
+              </div>
+            </div>
+          );
+        }
+
+        const payout = p.claimed ? claimValue(market, p) : claimAmount(market, p);
+        const profit = payout - p.amount;
+
+        if (p.claimed) {
+          return (
+            <div key={p.key} className="rounded-md border border-line-2 px-4 py-4">
+              <div className="flex items-center justify-between gap-3">
+                <Eyebrow>Claimed</Eyebrow>
+                <SideTag side={winner} size="sm" />
+              </div>
+              <BigAmount amount={payout} />
+              <p className="mt-1.5 text-[11.5px] text-text-3">
+                Collected to your wallet. Stake {fmtUsdx(p.amount)} {QUOTE_SYMBOL}, profit{" "}
+                {fmtUsdxSigned(profit)} {QUOTE_SYMBOL}.
+              </p>
+            </div>
+          );
+        }
+
+        return (
+          <div
+            key={p.key}
+            className={cn(
+              "rounded-md border px-4 py-4",
+              winner === "above" ? "border-above/40 bg-above/[0.06]" : "border-below/40 bg-below/[0.06]",
+            )}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <span
+                className={cn(
+                  "font-mono text-[11px] font-semibold uppercase tracking-[0.16em]",
+                  winner === "above" ? "text-above" : "text-below",
+                )}
+              >
+                You won
+              </span>
+              <SideTag side={winner} size="sm" />
+            </div>
+            <BigAmount amount={payout} />
+            <p className="mt-1.5 text-[11.5px] text-text-3">
+              Stake {fmtUsdx(p.amount)} {QUOTE_SYMBOL}, profit{" "}
+              <span className={profit >= 0n ? "text-brand" : "text-loss"}>{fmtUsdxSigned(profit)}</span>{" "}
+              {QUOTE_SYMBOL}.
+            </p>
+            <Button
+              className="mt-4"
+              variant="primary"
+              block
+              size="lg"
+              loading={pending}
+              onClick={() => void actions.claim(market, p.side, payout)}
+            >
+              Claim {fmtUsdx(payout)} {QUOTE_SYMBOL}
+            </Button>
+          </div>
+        );
+      })}
+      <p className="text-[11.5px] text-text-3">{outcome}</p>
     </div>
   );
 }
@@ -605,12 +680,11 @@ function SettledBody({
 /**
  * A market that missed its moment by too much to resolve.
  *
- * Nothing can be done here yet: deposits and withdrawals closed at the lock
- * time, and the refund only opens once the market is far enough past its
- * settle time for anyone to void it. So this says what happened, what is
- * owed, and when.
+ * Nothing can be done here yet: the refund only opens once the market is far
+ * enough past its settle time for anyone to void it. So this says what
+ * happened, what is owed, and when.
  */
-function ExpiredBody({ market, held }: { market: MarketView; held: PositionView | undefined }) {
+function ExpiredBody({ market, held }: { market: MarketView; held: Held }) {
   const refundAt = market.settleTs + VOID_GRACE_SECS;
   return (
     <div className="flex flex-col gap-4">
@@ -623,15 +697,15 @@ function ExpiredBody({ market, held }: { market: MarketView; held: PositionView 
         </p>
       </div>
 
-      {held && (
-        <div className="rounded-md border border-line-2 px-4 py-4">
+      {heldList(held).map((p) => (
+        <div key={p.key} className="rounded-md border border-line-2 px-4 py-4">
           <div className="flex items-center justify-between gap-3">
             <Eyebrow>Your refund</Eyebrow>
-            <SideTag side={held.side} size="sm" muted />
+            <SideTag side={p.side} size="sm" muted />
           </div>
-          <BigAmount amount={held.amount} />
+          <BigAmount amount={p.amount} />
         </div>
-      )}
+      ))}
 
       <div className="flex items-baseline justify-between gap-3 rounded-md border border-line-1 px-4 py-3 font-mono text-[12px] tabular">
         <span className="text-text-3">Refund opens</span>
@@ -650,39 +724,43 @@ function VoidedBody({
   actions,
 }: {
   market: MarketView;
-  held: PositionView | undefined;
+  held: Held;
   actions: Actions;
 }) {
   const pending = actions.isPending(market, "claim");
   return (
     <div className="flex flex-col gap-4">
       <Note>This market was voided. Deposits are refunded in full.</Note>
-      {held && !held.claimed && (
-        <div className="rounded-md border border-line-2 px-4 py-4">
-          <div className="flex items-center justify-between gap-3">
-            <Eyebrow>Refund</Eyebrow>
-            <SideTag side={held.side} size="sm" muted />
-          </div>
-          <BigAmount amount={held.amount} />
-          <Button
-            className="mt-4"
-            variant="primary"
-            block
-            size="lg"
-            loading={pending}
-            onClick={() => void actions.claim(market, held.amount)}
+      {heldList(held).map((p) =>
+        p.claimed ? (
+          <div
+            key={p.key}
+            className="flex items-center justify-between rounded-md border border-line-1 px-4 py-3 font-mono text-[12px] tabular"
           >
-            Claim refund
-          </Button>
-        </div>
-      )}
-      {held && held.claimed && (
-        <div className="flex items-center justify-between rounded-md border border-line-1 px-4 py-3 font-mono text-[12px] tabular">
-          <span className="text-text-3">Refunded</span>
-          <span className="text-text-1">
-            {fmtUsdx(held.amount)} {QUOTE_SYMBOL}
-          </span>
-        </div>
+            <span className="text-text-3">Refunded, {SIDE_META[p.side].label}</span>
+            <span className="text-text-1">
+              {fmtUsdx(p.amount)} {QUOTE_SYMBOL}
+            </span>
+          </div>
+        ) : (
+          <div key={p.key} className="rounded-md border border-line-2 px-4 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <Eyebrow>Refund</Eyebrow>
+              <SideTag side={p.side} size="sm" muted />
+            </div>
+            <BigAmount amount={p.amount} />
+            <Button
+              className="mt-4"
+              variant="primary"
+              block
+              size="lg"
+              loading={pending}
+              onClick={() => void actions.claim(market, p.side, p.amount)}
+            >
+              Claim refund
+            </Button>
+          </div>
+        ),
       )}
     </div>
   );
@@ -722,46 +800,60 @@ export default function DepositPanel({
   feed: PriceFeedView | undefined;
 }) {
   const { publicKey, connected } = useProgram();
-  const { position } = usePosition(market?.key, publicKey);
+  const { held } = usePosition(market?.key, publicKey);
   const { data: balances } = useBalances(publicKey);
   const actions = useMarketActions();
 
   if (!market || !phase || now === 0) return <PanelSkeleton />;
 
-  // A fully withdrawn position stays on chain with a zero stake; it is no
-  // position for our purposes and no longer pins the side.
-  const held = position && position.amount > 0n ? position : undefined;
   const ready = connected && publicKey !== null;
+  const positions = heldList(held);
 
   let body: ReactNode;
   if (!ready) {
-    body = <ConnectPrompt depositable={phase === "deposits"} />;
+    body = (
+      <ConnectPrompt
+        depositable={phase === "deposits" || (phase === "live" && liveDepositsOpen(market, now))}
+      />
+    );
   } else {
     switch (phase) {
       case "deposits":
         body = (
           <div className="flex flex-col gap-5">
-            <DepositForm market={market} balances={balances} held={held} actions={actions} />
-            {held && (
-              <div className="flex flex-col gap-3">
-                <PositionCard market={market} position={held} phase={phase} />
-                <WithdrawForm market={market} position={held} actions={actions} />
+            <DepositForm market={market} balances={balances} held={held} actions={actions} now={now} live={false} />
+            {positions.map((p) => (
+              <div key={p.key} className="flex flex-col gap-3">
+                <PositionCard market={market} position={p} phase={phase} />
+                <WithdrawForm market={market} position={p} actions={actions} />
               </div>
-            )}
+            ))}
           </div>
         );
         break;
       case "awaiting-lock":
         body = (
           <div className="flex flex-col gap-4">
-            <Note>Deposits closed. Waiting for the crank to record the reference price.</Note>
-            {held && <PositionCard market={market} position={held} phase={phase} />}
+            <Note>Deposits paused. Waiting for the crank to record the reference price.</Note>
+            {positions.map((p) => (
+              <PositionCard key={p.key} market={market} position={p} phase={phase} />
+            ))}
           </div>
         );
         break;
       case "live":
       case "awaiting-settle":
-        body = <LiveBody market={market} phase={phase} held={held} feed={feed} now={now} />;
+        body = (
+          <LiveBody
+            market={market}
+            phase={phase}
+            held={held}
+            feed={feed}
+            now={now}
+            balances={balances}
+            actions={actions}
+          />
+        );
         break;
       case "expired":
         body = <ExpiredBody market={market} held={held} />;

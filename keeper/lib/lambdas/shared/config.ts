@@ -28,6 +28,52 @@ export const DAILY_DEPOSIT_WINDOW_MINUTES = 24 * 60;
 /** Protocol fee, in basis points. Ceiling in the program is 500. */
 export const FEE_BPS = 100;
 
+// -- live round ---------------------------------------------------------------
+//
+// Deposits after lock, under a cap that decays from LIVE_MAX_MULTIPLE_BPS
+// just after lock to the deposit less the fee at settlement. All four are
+// frozen into each market at creation, so changing them here changes the
+// next market and never a running one.
+
+/** Whether markets accept deposits after lock. The switch for the round. */
+export const LIVE_DEPOSITS = true;
+
+/**
+ * The most a live deposit may be paid, in basis points of itself, for one
+ * landing the instant the market locks. Program ceiling is 50_000.
+ */
+export const LIVE_MAX_MULTIPLE_BPS = 20_000;
+
+/**
+ * How fast that maximum decays across the window, by kind of market.
+ *
+ * A daily market carries the overnight gap, which can decide it with a
+ * quarter of the window still to run, so its cap decays faster. Program
+ * ceiling is 3.
+ */
+export const LIVE_CAP_EXP: Record<"daily" | "hourly", number> = { daily: 3, hourly: 2 };
+
+/** How often the publisher writes a price. */
+export const PUBLISH_INTERVAL_SECS = 60;
+
+/**
+ * Live deposits close this long before settlement.
+ *
+ * The settle print is the last feed write before `settle_ts`, so a deposit
+ * placed closer than one publish interval could be placed knowing it. Two
+ * intervals leaves room for a late write. Program floor is 60.
+ */
+export const LIVE_CUTOFF_SECS = 2 * PUBLISH_INTERVAL_SECS;
+
+// The one relationship between these numbers that has to hold. Checked at
+// load rather than trusted, because the cutoff is what stands between the
+// live round and a deposit that already knows the settle print.
+if (LIVE_CUTOFF_SECS < 2 * PUBLISH_INTERVAL_SECS) {
+  throw new Error(
+    `LIVE_CUTOFF_SECS (${LIVE_CUTOFF_SECS}) must be at least twice PUBLISH_INTERVAL_SECS (${PUBLISH_INTERVAL_SECS})`,
+  );
+}
+
 /**
  * How late a crank may still act.
  *

@@ -7,6 +7,9 @@
 // The three things a user does to a market. Each builds one transaction
 // through the wallet-bound program handle, reports through toasts, and
 // invalidates every query the outcome touches.
+//
+// Positions are one per side, so withdraw and claim take the side of the
+// position they act on: it is part of the account's address.
 
 import { useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -94,7 +97,7 @@ export function useMarketActions() {
             .accountsPartial({
               user: publicKey!,
               market: market.address,
-              position: positionPda(market.address, publicKey!),
+              position: positionPda(market.address, publicKey!, side),
               vault: market.vault,
               userTokenAccount: quoteAta(publicKey!),
               quoteMint: market.quoteMint,
@@ -107,7 +110,7 @@ export function useMarketActions() {
   );
 
   const withdraw = useCallback(
-    (market: MarketView, amount: bigint) =>
+    (market: MarketView, side: Side, amount: bigint) =>
       run(
         market,
         "withdraw",
@@ -119,7 +122,7 @@ export function useMarketActions() {
             .accountsPartial({
               user: publicKey!,
               market: market.address,
-              position: positionPda(market.address, publicKey!),
+              position: positionPda(market.address, publicKey!, side),
               vault: market.vault,
               userTokenAccount: quoteAta(publicKey!),
               quoteMint: market.quoteMint,
@@ -131,7 +134,7 @@ export function useMarketActions() {
   );
 
   const claim = useCallback(
-    (market: MarketView, expected: bigint) =>
+    (market: MarketView, side: Side, expected: bigint) =>
       run(
         market,
         "claim",
@@ -144,7 +147,7 @@ export function useMarketActions() {
             .accountsPartial({
               user: publicKey!,
               market: market.address,
-              position: positionPda(market.address, publicKey!),
+              position: positionPda(market.address, publicKey!, side),
               vault: market.vault,
               userTokenAccount: ata,
               quoteMint: market.quoteMint,
