@@ -150,11 +150,68 @@ Had NVDA closed at 213.90 instead, the move would have been 2.01%, ABOVE would h
 | State | What is possible | How it transitions |
 |---|---|---|
 | Open | Deposit and withdraw, until the lock timestamp | Created by the keeper |
-| Locked | Nothing. The reference price has been recorded. | `lock`, at or after the lock timestamp |
+| Locked | Deposit under the live cap, until the cutoff. No withdrawals. The reference price has been recorded. | `lock`, at or after the lock timestamp |
 | Settled | Winners claim their share | `settle`, at or after the settle timestamp |
-| Voided | Everyone claims a full refund, no fee | One pool empty at lock, or no resolution within 6 hours of settle time |
+| Voided | Everyone claims a full refund, no fee | Losing pool empty at settle, or no resolution within 6 hours of settle time |
 
-Deposits close on the timestamp itself, enforced by the program. `lock` and `settle` can be submitted by anyone.
+Withdrawals close on the lock timestamp itself, and full-weight deposits with them. Deposits under the cap close at the cutoff. All of it is enforced by the program. `lock` and `settle` can be submitted by anyone.
+
+### The live round
+
+A parimutuel market with one pool empty cannot resolve, and until the reference price is recorded nobody knows which side is worth taking. Closing deposits at lock, as the first deployment did, meant an empty side stayed empty and the market voided. Leaving them open without a rule would let money that arrives once the outcome is visible take the losing pool from the people who backed the winning side blind.
+
+So deposits stay open after lock, under one rule: **money that arrives after the reference price is known never dilutes the money that was there before it.** Beyond that, the pools decide.
+
+Withdrawals close at lock. If they did not, the losing side would empty itself the moment the outcome showed and the winners would collect from an empty pot.
+
+**The cap.** Every deposit made after lock is recorded with the most it can ever be paid, as a multiple of itself:
+
+```
+f     = (settle_ts - now) / (settle_ts - lock_ts)     fraction of the window left: 1 at lock, 0 at settle
+M(f)  = (1 - fee) + (max - (1 - fee)) * f^k
+cap   = amount * M(f)
+```
+
+`max` and `k` are set per market at creation and never change afterwards. With `max = 2` and a 1% fee:
+
+| Window left | k = 0 | k = 1 | k = 2 | k = 3 |
+|---|---|---|---|---|
+| 100%, at lock | 2.00x | 2.00x | 2.00x | 2.00x |
+| 50% | 2.00x | 1.50x | 1.24x | 1.12x |
+| 27%, a daily market at the next open | 2.00x | 1.26x | 1.06x | 1.01x |
+| 3%, the cutoff | 2.00x | 1.02x | 0.99x | 0.99x |
+
+A deposit in the last minutes of a decided market is capped at the deposit less its own fee. It pays the fee and touches nobody else. The keeper uses `k = 2` on hourly markets and `k = 3` on daily ones, whose overnight gap can decide them with a quarter of the window still to run.
+
+**Where the money goes at claim.** On the winning side, `A` is the money that was there before lock, `S` the money that arrived after, `C` the sum of its caps, and `D` the distributable pot:
+
+```
+if S == 0:   late group = 0                         the market as it was before the live round
+if A == 0:   late group = D                         nobody pre-lock to protect, the pools decide
+otherwise:   late group = min(D * S / (A + S), C)   pro rata, but never past the cap
+pre-lock group = D - late group
+```
+
+Pre-lock winners split their group by amount, exactly as before. Late winners first recover `amount * (1 - fee)` each, which the group can always fund, and then split what remains by how far their caps exceeded that floor, which is larger for money that arrived with more of the window left. Between two late depositors on the same side, the earlier one earns more of the profit.
+
+**Worked example.** Balanced pre-lock pools of 5,000 each. The market decides for ABOVE, and 10,000 lands on ABOVE two minutes before settlement.
+
+```
+Pot 20,000, fee 200, distributable 19,800
+Pro rata, the late 10,000 would take   19,800 * 10,000 / 15,000 = 13,200
+Its cap, at M = 0.9911                 10,000 * 0.9911 = 9,911
+
+Late depositor collects    9,911     loses 89 on 10,000
+Pre-lock winner collects   9,889     against 9,900 with no late money at all
+```
+
+The same 10,000 at half the window, when nothing is decided, is capped at 12,425. It earns, but less than the 1.48x the pre-lock money keeps, because it took less risk.
+
+**The cutoff.** Live deposits close `live_cutoff_secs` before settlement. The settlement print is the last feed write before `settle_ts`, so a deposit closer than one feed interval could be placed knowing it. The keeper publishes every minute and sets the cutoff to two intervals.
+
+**What it does not prevent.** A deposit made at mid-window with a better read of the session than the pre-lock money had earns better terms than a blind early deposit, bounded by `M(f)`. That is the trade the live round makes, and `max` and `k` decide how much of it a market allows.
+
+**Rounding.** Every divisor at claim time is a total accumulated from the same integer terms it distributes: `amount`, `floor` and `excess` are summed onto the pool as each deposit lands and read back per position at claim. A group can therefore never pay out more than it was given. The dust stays in the vault.
 
 ### Settlement arithmetic
 
@@ -164,7 +221,9 @@ above_wins    = move_bps > strike_bps                (a tie resolves to BELOW)
 
 pot           = above_pool + below_pool
 distributable = pot - pot * fee_bps / 10_000
-payout(user)  = user.amount * distributable / winning_pool
+
+pre-lock winner   amount * (distributable - late_group) / (winning_pool - live.amount)
+late winner       its floor, then its share of the late group's profit by excess
 ```
 
 Intermediate arithmetic is u128. Division truncates, so the sum of all payouts never exceeds the distributable amount.
@@ -220,7 +279,7 @@ The product. Measures from one session's close to the next session's close.
 |---|---|
 | Reference price | Official close of the prior session |
 | Settlement price | Official close of the current session |
-| Deposit window | 24 hours, ending at the reference close |
+| Deposit window | 24 hours to the reference close at full weight, then under the live cap until two minutes before settlement |
 | Calibration | Trailing 20 daily close-to-close moves |
 | Markets per ticker per day | 3 (TIGHT, FAIR, WIDE) |
 
@@ -241,7 +300,7 @@ An intraday instrument, so the full lifecycle can be observed in minutes rather 
 |---|---|
 | Window | One hour, on the clock, 10:00 to 16:00 ET |
 | Markets per session | 6, or 3 on a 13:00 early close |
-| Deposit window | From 09:00 ET until the market's lock time |
+| Deposit window | From the evening before until the hour's lock at full weight, then under the live cap until two minutes before the hour ends |
 | Calibration | Trailing 20 regular-session hourly moves |
 | Ticker | NVDA, FAIR |
 
@@ -355,35 +414,48 @@ Market
   state              MarketState   Open | Locked | Settled | Voided
   reference_price    u64
   settlement_price   u64
-  above_pool         u64
+  above_pool         u64           everything deposited, before and after lock
   below_pool         u64
+  live_above         LiveTotals    the part of each pool that arrived after lock
+  live_below         LiveTotals
   winning_side       Option<Side>
   fee_bps            u16
   treasury           Pubkey
   fee_collected      bool
   lock_ts            i64
   settle_ts          i64
+  live_deposits      bool          whether deposits stay open after lock
+  live_max_multiple_bps  u16       cap for a deposit landing at lock, in bps of itself
+  live_cap_exp       u8            how fast the cap decays across the window
+  live_cutoff_secs   u32           live deposits close this long before settle_ts
+
+LiveTotals
+  amount             u64
+  floor              u64           amount * (1 - fee): the least it is paid if it wins
+  excess             u64           cap - floor: the part that decays with the time left
 
 Position
   owner              Pubkey
   market             Pubkey
-  side               Side          Above | Below
-  amount             u64
+  side               Side          Above | Below, part of the address
+  amount             u64           before and after lock
+  live               LiveTotals    the part of amount that arrived after lock
   claimed            bool
 ```
 
-One `Position` per user per market. The side can change only while the balance is zero.
+One `Position` per user per market per side. The side is part of the account's address, so a user may hold both sides of a market, and each is withdrawn and claimed on its own.
 
 ### Instructions
 
 | Instruction | Signer | Available when |
 |---|---|---|
 | `init_market` | authority | Always |
-| `deposit` | user | `state == Open && now < lock_ts` |
+| `deposit` | user | `state == Open && now < lock_ts`, or `state == Locked && live_deposits && now < settle_ts - live_cutoff_secs` |
 | `withdraw` | user | `state == Open && now < lock_ts` |
 | `lock` | anyone | `state == Open && now >= lock_ts` |
 | `settle` | anyone | `state == Locked && now >= settle_ts` |
 | `claim` | user | `state in (Settled, Voided)`, once per position |
+| `claim_for_owner` | anyone | As `claim`. Pays the owner's associated token account, creating it if needed. |
 | `void_market` | anyone | `state in (Open, Locked) && now > settle_ts + 6h` |
 | `collect_fee` | anyone | `state == Settled`, once per market |
 | `init_faucet`, `faucet_mint` | | Feature `devnet-faucet` |
@@ -393,7 +465,10 @@ One `Position` per user per market. The side can change only while the balance i
 
 | Condition | Result |
 |---|---|
-| One pool empty at `lock` | Market voided. Full refunds. |
+| Losing pool empty at `settle` | Market voided. Full refunds. An empty side at `lock` is not voided: it can still be filled during the window. |
+| Live deposit at or after the cutoff | Rejected. |
+| Live deposit on a market created with `live_deposits = false` | Rejected. |
+| Late money on the winning side beside pre-lock money | Paid at most its cap. What the cap holds back goes to the pre-lock winners. |
 | `move_bps == strike_bps` | BELOW wins. |
 | Oracle stale or unreadable at `lock` or `settle` | Instruction fails and can be retried. Market state unchanged. |
 | Unresolved 6 hours past `settle_ts` | `void_market` available to anyone. Full refunds, no fee. |
@@ -410,6 +485,9 @@ One `Position` per user per market. The side can change only while the balance i
 | `MAX_PRICE_AGE_SECS` | 120 |
 | `MAX_CONFIDENCE_RATIO` | 100 (1% of price) |
 | `VOID_GRACE_SECS` | 21,600 |
+| `MAX_LIVE_MAX_MULTIPLE_BPS` | 50,000 |
+| `MAX_LIVE_CAP_EXP` | 3 |
+| `MIN_LIVE_CUTOFF_SECS` | 60 |
 | `KEEPER_PRICE_EXPONENT` | -8 |
 
 ---
@@ -424,7 +502,7 @@ Five Lambda functions deployed with AWS CDK. Each is idempotent: it derives the 
 | HourlyMarkets | 09:00 ET, weekdays | Create the session's hourly markets |
 | DailyMarkets | 15:55 ET, weekdays | Create the daily markets that lock at the next session's close |
 | Crank | Every minute, weekdays | `lock` and `settle` due markets, bundling `update_price` |
-| Seeder | Every 10 minutes, weekdays | Devnet only. Funds both sides of open markets from three derived wallets and claims their winnings |
+| Seeder | Every 10 minutes, weekdays | Devnet only. Funds both sides of open markets from six derived wallets, puts one deposit on a side still empty during the live window, and claims their winnings |
 
 The signing key is read from SSM Parameter Store at cold start and cached for the container lifetime. IAM grants `ssm:GetParameter` on that single parameter ARN and nothing else.
 
@@ -544,6 +622,10 @@ The app needs no configuration to run against the live devnet deployment. A wall
 **Hourly markets measure intraday movement.** They are calibrated separately and presented as a distinct instrument. The daily product measures close to close for the reasons given in section 5.
 
 **Single price source.** The `PriceFeed` account and program checks support multiple sources; the keeper currently publishes from one.
+
+**Informed mid-window deposits are allowed.** A deposit made during the live round with a better read of the session than the pre-lock money had earns up to the cap that moment allows, at the expense of the losing side. The cap bounds it; it does not remove it. See section 3.
+
+**The live cutoff assumes the feed cadence.** It has to exceed the interval between price writes, or a deposit could be placed knowing the settlement print. The program enforces a 60 second floor; the keeper refuses to start with a cutoff under two of its publish intervals.
 
 **Devnet only.** No mainnet deployment. No real funds.
 

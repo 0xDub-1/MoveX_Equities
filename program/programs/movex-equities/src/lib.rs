@@ -9,10 +9,14 @@
 //! A market's life:
 //!
 //! ```text
-//!   init_market ──► deposit / withdraw ──► lock ──► settle ──► claim
-//!                                            │         │
-//!                                            └─ void ──┴──────► claim (refund)
+//!   init_market ──► deposit / withdraw ──► lock ──► deposit, capped ──► settle ──► claim
+//!                                                                         │
+//!                                                              void ──────┴──────► claim (refund)
 //! ```
+//!
+//! Deposits after lock are paid under a cap that decays to the deposit less
+//! the fee at settlement, so they can never dilute the money that was there
+//! before the reference price was known. See `payout.rs`.
 
 pub mod constants;
 pub mod error;
