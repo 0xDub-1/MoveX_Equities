@@ -198,6 +198,23 @@ describe('dailyMarketDates', () => {
     });
   });
 
+  /**
+   * The backstop has to find the same ladder across a closed day, not just
+   * across a weekend.
+   *
+   * Wednesday's 15:55 run reaches over Thanksgiving to lock on the Friday.
+   * The Thursday 09:00 run creates nothing, because the handler refuses a
+   * day that is not a session. The Friday run is the one that repairs it,
+   * and it has to name the ladder Wednesday made rather than a new one.
+   */
+  it('finds the same ladder again across a holiday', () => {
+    const wednesday = dailyMarketDates('2026-11-25', 'next');
+    const friday = dailyMarketDates('2026-11-27', 'today');
+
+    expect(wednesday).toEqual({ lockDate: '2026-11-27', settleDate: '2026-11-30' });
+    expect(friday).toEqual(wednesday);
+  });
+
   it('skips holidays', () => {
     // Created Wed 25 Nov. Thu 26 is Thanksgiving, so lock Fri 27, settle Mon 30.
     expect(dailyMarketDates('2026-11-25')).toEqual({
