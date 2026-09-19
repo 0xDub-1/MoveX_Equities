@@ -16,9 +16,12 @@ import type { Program } from "@coral-xyz/anchor";
 
 import { easternTimestamp, hourlySlots, closeMinutes } from "./calendar";
 import { FEE_BPS } from "./config";
+import { RETRY_DELAY_MS, shouldRetrySend } from "./sending";
 import { bn, marketPda, priceFeedPda, sessionBytes, underlyingBytes, vaultPda, TIER_VARIANT } from "./solana";
 
 const logger = new Logger({ serviceName: "movex-equities-markets" });
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type Tier = "tight" | "fair" | "wide";
 
@@ -66,31 +69,53 @@ export async function ensureMarkets(
         throw new Error(`expected 20 samples, got ${spec.samplesBps.length}`);
       }
 
-      await program.methods
-        .initMarket({
-          underlying: Array.from(underlyingBytes(spec.symbol)),
-          sessionDate: Array.from(sessionBytes(spec.sessionId)),
-          tier: TIER_VARIANT[spec.tier],
-          strikeBps: spec.strikeBps,
-          samplesBps: spec.samplesBps,
-          feeBps: FEE_BPS,
-          treasury,
-          // i64 in the IDL, so BN rather than a native number.
-          lockTs: bn(spec.lockTs),
-          settleTs: bn(spec.settleTs),
-        })
-        .accounts({
-          authority: program.provider.publicKey!,
-          market,
-          quoteMint,
-          vault: vaultPda(program.programId, market),
-          // The program stores this and pins lock/settle to it. For the
-          // devnet build that is our own keeper feed.
-          pythFeed: priceFeedPda(program.programId, spec.symbol),
-          tokenProgram: TOKEN_PROGRAM_ID,
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+      const send = () =>
+        program.methods
+          .initMarket({
+            underlying: Array.from(underlyingBytes(spec.symbol)),
+            sessionDate: Array.from(sessionBytes(spec.sessionId)),
+            tier: TIER_VARIANT[spec.tier],
+            strikeBps: spec.strikeBps,
+            samplesBps: spec.samplesBps,
+            feeBps: FEE_BPS,
+            treasury,
+            // i64 in the IDL, so BN rather than a native number.
+            lockTs: bn(spec.lockTs),
+            settleTs: bn(spec.settleTs),
+          })
+          .accounts({
+            authority: program.provider.publicKey!,
+            market,
+            quoteMint,
+            vault: vaultPda(program.programId, market),
+            // The program stores this and pins lock/settle to it. For the
+            // devnet build that is our own keeper feed.
+            pythFeed: priceFeedPda(program.programId, spec.symbol),
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc();
+
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await send();
+          break;
+        } catch (err) {
+          // A send whose confirmation timed out may still have landed, and
+          // the chain is the only honest answer to that.
+          if (await program.provider.connection.getAccountInfo(market)) {
+            logger.warn("market landed despite a failed send", { label, attempt });
+            break;
+          }
+          if (!shouldRetrySend(err, attempt)) throw err;
+          logger.warn("send failed, retrying", {
+            label,
+            attempt,
+            error: err instanceof Error ? err.message.split("\n")[0] : String(err),
+          });
+          await sleep(RETRY_DELAY_MS);
+        }
+      }
 
       logger.info("created market", {
         label,

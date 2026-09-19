@@ -165,6 +165,39 @@ describe('dailyMarketDates', () => {
     });
   });
 
+  /**
+   * What makes the morning backstop a repair rather than a second ladder.
+   *
+   * The 15:55 run on Friday and the 09:00 run on Monday have to name the
+   * same markets, or the backstop quietly creates a ladder of its own
+   * instead of filling the rungs the Friday run dropped. Since the session
+   * id is the settle date, that is this equality and nothing else.
+   */
+  it('names the same ladder from the evening run and the next morning', () => {
+    const evening = dailyMarketDates('2026-09-18', 'next'); // Friday 15:55
+    const morning = dailyMarketDates('2026-09-21', 'today'); // Monday 09:00
+
+    expect(evening).toEqual({ lockDate: '2026-09-21', settleDate: '2026-09-22' });
+    expect(morning).toEqual(evening);
+  });
+
+  /**
+   * The backstop has the whole session to land its transactions, which is
+   * the point: `init_market` refuses a lock that has already passed, so a
+   * repair window measured in hours is worth having.
+   */
+  it('locks the backstop ladder at the close of the day it runs', () => {
+    expect(dailyMarketDates('2026-09-22', 'today').lockDate).toBe('2026-09-22');
+  });
+
+  it('still skips weekends and holidays when backstopping', () => {
+    // Friday's ladder settles Monday, not Saturday.
+    expect(dailyMarketDates('2026-09-18', 'today')).toEqual({
+      lockDate: '2026-09-18',
+      settleDate: '2026-09-21',
+    });
+  });
+
   it('skips holidays', () => {
     // Created Wed 25 Nov. Thu 26 is Thanksgiving, so lock Fri 27, settle Mon 30.
     expect(dailyMarketDates('2026-11-25')).toEqual({

@@ -207,15 +207,27 @@ export function hourlySlots(date: string): HourlySlot[] {
   return slots;
 }
 
+/** Which ladder a daily run is aiming at. See `dailyMarketDates`. */
+export type DailyTarget = "next" | "today";
+
 /**
  * Lock and settle dates for a daily market created on `createdOn`.
  *
- * It locks at the close of the next session and settles at the close of the
- * one after, which keeps deposits open for roughly 24 hours. Locking at the
- * close of the creation day instead would leave five minutes between the
- * 15:55 creation run and the lock, which is not a window anyone can join.
+ * The 15:55 run targets `next`: the ladder locks at the close of the next
+ * session and settles at the close of the one after, which keeps deposits
+ * open for roughly 24 hours. Locking at the close of the creation day instead
+ * would leave five minutes between the run and the lock, which is not a
+ * window anyone can join.
+ *
+ * The morning backstop targets `today`, which names the same ladder the
+ * previous session's 15:55 run was supposed to create: it locks at today's
+ * close. That is what makes the backstop a repair rather than a second
+ * ladder, and it still has the whole session to get the transaction through.
  */
-export function dailyMarketDates(createdOn: string): { lockDate: string; settleDate: string } {
-  const lockDate = nextTradingDay(createdOn);
+export function dailyMarketDates(
+  createdOn: string,
+  target: DailyTarget = "next",
+): { lockDate: string; settleDate: string } {
+  const lockDate = target === "today" ? createdOn : nextTradingDay(createdOn);
   return { lockDate, settleDate: nextTradingDay(lockDate) };
 }

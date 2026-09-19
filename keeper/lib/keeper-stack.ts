@@ -18,7 +18,8 @@ import { LambdaInvoke } from 'aws-cdk-lib/aws-scheduler-targets';
  *   Publisher      every minute      writes each ticker's PriceFeed
  *   HourlyMarkets  20:00 ET          creates the NEXT session's intraday
  *                  09:00 ET          markets, with a morning backstop
- *   DailyMarkets   15:55 ET          creates the next close-to-close markets
+ *   DailyMarkets   15:55 ET          creates the next close-to-close markets,
+ *                  09:00 ET          with a morning backstop of its own
  *   Crank          every minute      locks and settles whatever is due
  *   Seeder         every 10 min      funds both sides, claims winnings (devnet)
  *
@@ -285,7 +286,23 @@ export class KeeperStack extends cdk.Stack {
       'DailyMarketsSchedule',
       'dailyMarkets',
       ScheduleExpression.cron({ minute: '55', hour: '15', weekDay: 'MON-FRI', timeZone: ny }),
-      'Create the close-to-close markets that lock at today\'s close',
+      'Create the close-to-close markets that lock at the next session\'s close',
+      ScheduleTargetInput.fromObject({ session: 'next' }),
+    );
+
+    // The same backstop the intraday ladder has, and for the same reason: a
+    // dropped send takes that rung off the board for the whole session, and
+    // nothing downstream ever looks again. This targets the ladder the
+    // previous session's 15:55 run was meant to create, which locks at
+    // today's close, so it has the whole session to get a transaction
+    // through. When that run did its job it finds every rung already there
+    // and creates nothing.
+    this.schedule(
+      'DailyBackstopSchedule',
+      'dailyMarkets',
+      ScheduleExpression.cron({ minute: '0', hour: '9', weekDay: 'MON-FRI', timeZone: ny }),
+      'Backstop: create any rung of today\'s ladder the 15:55 run failed to',
+      ScheduleTargetInput.fromObject({ session: 'today' }),
     );
 
     // Every ten minutes from the hour before the open until after the

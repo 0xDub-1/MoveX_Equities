@@ -20,6 +20,7 @@ import {
   isTradingDay,
   dailyMarketDates,
   nextTradingDay,
+  type DailyTarget,
 } from "../shared/calendar";
 import { HOURLY_TICKER, PUBLISHED_TICKERS } from "../shared/config";
 import { TICKERS } from "../strikes/config";
@@ -79,6 +80,11 @@ type HourlyTarget = "today" | "next";
 
 interface HourlyEvent {
   session?: HourlyTarget;
+}
+
+/** Which ladder a daily run creates. `DailyTarget` lives with the calendar. */
+interface DailyEvent {
+  session?: DailyTarget;
 }
 
 /**
@@ -144,17 +150,27 @@ export const hourlyHandler = async (event?: HourlyEvent) => {
   return result;
 };
 
-/** 15:55 ET. Creates the daily markets that lock at the next session's close. */
-export const dailyHandler = async () => {
+/**
+ * Creates one daily ladder.
+ *
+ * The run that matters is at 15:55 with `session: "next"`: the ladder locks
+ * at the next session's close and settles the one after, so the deposit
+ * window is about a day. The 09:00 run passes `session: "today"` and is a
+ * backstop for the ladder the previous session should have created, which
+ * locks at today's close.
+ *
+ * The backstop exists because one market failing is not one market lost. A
+ * send that drops takes that rung off the board for the whole session, and
+ * before this there was nothing that ever looked again.
+ */
+export const dailyHandler = async (event?: DailyEvent) => {
+  const target: DailyTarget = event?.session === "today" ? "today" : "next";
   const date = sessionToday();
   if (!date) return { created: [], existing: [], failed: [] };
 
   const program = await getProgram();
 
-  // Locks at the NEXT session's close and settles the one after, so the
-  // deposit window is about a day. Locking at today's close would give five
-  // minutes between this run and the lock.
-  const { lockDate, settleDate } = dailyMarketDates(date);
+  const { lockDate, settleDate } = dailyMarketDates(date, target);
 
   const specs: MarketSpec[] = [];
   for (const symbol of PUBLISHED_TICKERS) {
@@ -174,7 +190,7 @@ export const dailyHandler = async () => {
     }
   }
 
-  logger.info("daily markets", { createdOn: date, lockDate, settleDate, count: specs.length });
+  logger.info("daily markets", { target, createdOn: date, lockDate, settleDate, count: specs.length });
 
   const result = await ensureMarkets(
     program,

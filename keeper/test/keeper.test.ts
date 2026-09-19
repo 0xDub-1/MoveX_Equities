@@ -68,8 +68,8 @@ describe('permissions', () => {
 });
 
 describe('schedules', () => {
-  it('runs six of them', () => {
-    template.resourceCountIs('AWS::Scheduler::Schedule', 6);
+  it('runs seven of them', () => {
+    template.resourceCountIs('AWS::Scheduler::Schedule', 7);
   });
 
   /**
@@ -80,7 +80,7 @@ describe('schedules', () => {
   it('declares New York time on every schedule, never UTC', () => {
     const schedules = template.findResources('AWS::Scheduler::Schedule');
     const entries = Object.values(schedules);
-    expect(entries).toHaveLength(6);
+    expect(entries).toHaveLength(7);
     for (const s of entries) {
       expect(s.Properties.ScheduleExpressionTimezone).toBe('America/New_York');
     }
@@ -120,10 +120,25 @@ describe('schedules', () => {
     });
   });
 
-  it('creates the daily markets just before the close they lock at', () => {
+  it('creates the daily markets the session before the close they lock at', () => {
     template.hasResourceProperties('AWS::Scheduler::Schedule', {
       ScheduleExpression: 'cron(55 15 ? * MON-FRI *)',
       ScheduleExpressionTimezone: 'America/New_York',
+      Target: Match.objectLike({ Input: JSON.stringify({ session: 'next' }) }),
+    });
+  });
+
+  /**
+   * The gap this closes cost two rungs of real ladders: a dropped send left
+   * TSLA and SPY with one market each for a session, and nothing ever looked
+   * again. The 09:00 run targets the ladder locking at today's close, so it
+   * has the whole session to get the transaction through.
+   */
+  it('backstops the daily ladder in the morning, targeting today\'s close', () => {
+    template.hasResourceProperties('AWS::Scheduler::Schedule', {
+      ScheduleExpression: 'cron(0 9 ? * MON-FRI *)',
+      ScheduleExpressionTimezone: 'America/New_York',
+      Target: Match.objectLike({ Input: JSON.stringify({ session: 'today' }) }),
     });
   });
 
