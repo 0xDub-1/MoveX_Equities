@@ -265,6 +265,15 @@ function DepositForm({
   const capBps = live ? liveMultipleBps(market, now) : null;
   const closesIn = live ? market.settleTs - market.liveCutoffSecs - now : null;
 
+  // What a unit on each side pays if it wins. In the live round the pool
+  // multiple is a ceiling the cap sits under, so the lower of the two is the
+  // honest number to show on the selector.
+  const sidePays = (s: Side): number | null => {
+    const pool = payoutMultiple(market, s);
+    if (!live || pool === null || capBps === null) return pool;
+    return Math.min(pool, capBps / 10_000);
+  };
+
   const total = pot(market);
 
   return (
@@ -327,7 +336,7 @@ function DepositForm({
                   {s === "above" ? `Moves more than ${strike}` : `Stays within ${strike}`}
                 </span>
                 <span className="mt-1.5 font-mono text-[12px] tabular text-text-3">
-                  pays <span className="text-text-1">{fmtMultiple(payoutMultiple(market, s))}</span>
+                  pays <span className="text-text-1">{fmtMultiple(sidePays(s))}</span>
                 </span>
               </button>
             );
