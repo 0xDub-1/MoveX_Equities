@@ -4,12 +4,14 @@ use anchor_spl::token::{transfer_checked, Mint, Token, TokenAccount, TransferChe
 use crate::{
     constants::*,
     error::ErrorCode,
-    state::{Market, MarketState, Position, Side},
+    state::{Market, MarketState, Position},
 };
 
 /// The escape hatch. Available only while the market is open, which is the
 /// whole point: once the reference price is taken the bet is live and there
-/// is nothing left to back out of.
+/// is nothing left to back out of. Deposits may keep arriving after that
+/// under the live cap; withdrawals may not, or the losing side would empty
+/// itself the moment the outcome showed.
 #[derive(Accounts)]
 pub struct Withdraw<'info> {
     #[account(mut)]
@@ -32,7 +34,7 @@ pub struct Withdraw<'info> {
     /// passed here at all.
     #[account(
         mut,
-        seeds = [POSITION_SEED, market.key().as_ref(), user.key().as_ref()],
+        seeds = [POSITION_SEED, market.key().as_ref(), user.key().as_ref(), position.side.as_seed()],
         bump = position.bump,
     )]
     pub position: Account<'info, Position>,
@@ -108,20 +110,8 @@ pub fn handle_withdraw(ctx: Context<Withdraw>, amount: u64) -> Result<()> {
         .ok_or(ErrorCode::MathOverflow)?;
 
     let market = &mut ctx.accounts.market;
-    match side {
-        Side::Above => {
-            market.above_pool = market
-                .above_pool
-                .checked_sub(amount)
-                .ok_or(ErrorCode::MathOverflow)?
-        }
-        Side::Below => {
-            market.below_pool = market
-                .below_pool
-                .checked_sub(amount)
-                .ok_or(ErrorCode::MathOverflow)?
-        }
-    }
+    let pool = market.pool_mut(side);
+    *pool = pool.checked_sub(amount).ok_or(ErrorCode::MathOverflow)?;
 
     Ok(())
 }

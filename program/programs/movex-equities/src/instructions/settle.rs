@@ -55,6 +55,21 @@ pub fn handle_settle(ctx: Context<Settle>) -> Result<()> {
     };
 
     market.settlement_price = reading.price;
+
+    // A pot with no counterparty is not a market. The side that did show up
+    // gets every unit back instead of "winning" against nobody and paying a
+    // fee for it. Decided here rather than at lock because deposits may
+    // arrive during the window, and an empty side at lock can be filled.
+    if market.pool(winner.opposite()) == 0 {
+        market.state = MarketState::Voided;
+        msg!(
+            "voided at settle: {:?} would have won against an empty {:?}",
+            winner,
+            winner.opposite()
+        );
+        return Ok(());
+    }
+
     market.winning_side = Some(winner);
     market.state = MarketState::Settled;
 

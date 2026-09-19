@@ -15,7 +15,7 @@ use {
         },
         AccountDeserialize, InstructionData, ToAccountMetas,
     },
-    anchor_spl::token::spl_token,
+    anchor_spl::{associated_token, token::spl_token},
     litesvm::LiteSVM,
     movex_equities::{
         instructions::InitMarketParams,
@@ -43,6 +43,13 @@ pub const SESSION: &[u8; 10] = b"2026-09-16";
 /// A reference price with room for a large move in either direction without
 /// getting near any integer boundary. 218.29 in cents, matching the docs.
 pub const REFERENCE_PRICE: u64 = 21_829;
+
+/// The live round as markets are created with it in tests: on, twice the
+/// deposit at most just after lock, a quadratic decay, and a two minute
+/// cutoff. Named so a test that changes one of them says which.
+pub const LIVE_MAX_MULTIPLE_BPS: u16 = 20_000;
+pub const LIVE_CAP_EXP: u8 = 2;
+pub const LIVE_CUTOFF_SECS: u32 = 120;
 
 pub struct Ctx {
     pub svm: LiteSVM,
@@ -136,6 +143,9 @@ fn create_mint(svm: &mut LiteSVM, payer: &Keypair) -> Pubkey {
 }
 
 /// An empty token account for `owner`, paid for by `payer`.
+///
+/// Deliberately not the associated one, so a test that pays an owner through
+/// `claim_for_owner` exercises the path that has to create it.
 fn create_token_account(
     svm: &mut LiteSVM,
     payer: &Keypair,
@@ -239,6 +249,10 @@ pub fn default_params(ctx: &Ctx) -> InitMarketParams {
         treasury: ctx.treasury.pubkey(),
         lock_ts: t + 3_600,
         settle_ts: t + 90_000,
+        live_deposits: true,
+        live_max_multiple_bps: LIVE_MAX_MULTIPLE_BPS,
+        live_cap_exp: LIVE_CAP_EXP,
+        live_cutoff_secs: LIVE_CUTOFF_SECS,
     }
 }
 
@@ -262,12 +276,19 @@ pub fn collect_fee(ctx: &mut Ctx) -> Result<(), String> {
     send(&mut ctx.svm, &cranker, &[ix], &[&cranker])
 }
 
-pub fn position_pda(ctx: &Ctx, user: &Pubkey) -> Pubkey {
+/// One position per user, market and side.
+pub fn position_pda(ctx: &Ctx, user: &Pubkey, side: Side) -> Pubkey {
     Pubkey::find_program_address(
-        &[b"position", ctx.market.as_ref(), user.as_ref()],
+        &[b"position", ctx.market.as_ref(), user.as_ref(), side.as_seed()],
         &ctx.program_id,
     )
     .0
+}
+
+/// Where `claim_for_owner` pays: the owner's associated token account for
+/// the quote mint, whether or not it exists yet.
+pub fn owner_ata(ctx: &Ctx, owner: &Pubkey) -> Pubkey {
+    associated_token::get_associated_token_address(owner, &ctx.mint)
 }
 
 // ---------------------------------------------------------------------------
@@ -379,7 +400,7 @@ pub fn deposit(
         movex_equities::accounts::Deposit {
             user: user.pubkey(),
             market: ctx.market,
-            position: position_pda(ctx, &user.pubkey()),
+            position: position_pda(ctx, &user.pubkey(), side),
             vault: ctx.vault,
             user_token_account: *ata,
             quote_mint: ctx.mint,
@@ -391,14 +412,20 @@ pub fn deposit(
     send(&mut ctx.svm, user, &[ix], &[user])
 }
 
-pub fn withdraw(ctx: &mut Ctx, user: &Keypair, ata: &Pubkey, amount: u64) -> Result<(), String> {
+pub fn withdraw(
+    ctx: &mut Ctx,
+    user: &Keypair,
+    ata: &Pubkey,
+    side: Side,
+    amount: u64,
+) -> Result<(), String> {
     let ix = Instruction::new_with_bytes(
         ctx.program_id,
         &movex_equities::instruction::Withdraw { amount }.data(),
         movex_equities::accounts::Withdraw {
             user: user.pubkey(),
             market: ctx.market,
-            position: position_pda(ctx, &user.pubkey()),
+            position: position_pda(ctx, &user.pubkey(), side),
             vault: ctx.vault,
             user_token_account: *ata,
             quote_mint: ctx.mint,
@@ -460,14 +487,14 @@ pub fn void_market(ctx: &mut Ctx) -> Result<(), String> {
     send(&mut ctx.svm, &cranker, &[ix], &[&cranker])
 }
 
-pub fn claim(ctx: &mut Ctx, user: &Keypair, ata: &Pubkey) -> Result<(), String> {
+pub fn claim(ctx: &mut Ctx, user: &Keypair, ata: &Pubkey, side: Side) -> Result<(), String> {
     let ix = Instruction::new_with_bytes(
         ctx.program_id,
         &movex_equities::instruction::Claim {}.data(),
         movex_equities::accounts::Claim {
             user: user.pubkey(),
             market: ctx.market,
-            position: position_pda(ctx, &user.pubkey()),
+            position: position_pda(ctx, &user.pubkey(), side),
             vault: ctx.vault,
             user_token_account: *ata,
             quote_mint: ctx.mint,
@@ -476,4 +503,30 @@ pub fn claim(ctx: &mut Ctx, user: &Keypair, ata: &Pubkey) -> Result<(), String> 
         .to_account_metas(None),
     );
     send(&mut ctx.svm, user, &[ix], &[user])
+}
+
+/// A stranger pays `owner`'s position out to the owner's associated token
+/// account, creating it if needed.
+pub fn claim_for_owner(ctx: &mut Ctx, owner: &Pubkey, side: Side) -> Result<(), String> {
+    let payer = Keypair::new();
+    ctx.svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
+
+    let ix = Instruction::new_with_bytes(
+        ctx.program_id,
+        &movex_equities::instruction::ClaimForOwner {}.data(),
+        movex_equities::accounts::ClaimForOwner {
+            payer: payer.pubkey(),
+            owner: *owner,
+            market: ctx.market,
+            position: position_pda(ctx, owner, side),
+            vault: ctx.vault,
+            owner_token_account: owner_ata(ctx, owner),
+            quote_mint: ctx.mint,
+            token_program: spl_token::ID,
+            associated_token_program: associated_token::ID,
+            system_program: system_program::ID,
+        }
+        .to_account_metas(None),
+    );
+    send(&mut ctx.svm, &payer, &[ix], &[&payer])
 }

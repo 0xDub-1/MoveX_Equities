@@ -43,7 +43,9 @@ pub mod movex_equities {
         crate::instructions::init_market::handle_init_market(ctx, params)
     }
 
-    /// Deposits into ABOVE or BELOW. Open until the market locks.
+    /// Deposits into ABOVE or BELOW. Before lock at full weight; after lock,
+    /// where the market allows it, under a cap that decays to the deposit
+    /// less the fee at settlement.
     pub fn deposit(ctx: Context<Deposit>, side: Side, amount: u64) -> Result<()> {
         crate::instructions::deposit::handle_deposit(ctx, side, amount)
     }
@@ -53,12 +55,13 @@ pub mod movex_equities {
         crate::instructions::withdraw::handle_withdraw(ctx, amount)
     }
 
-    /// Freezes deposits and records the reference price. Permissionless.
+    /// Records the reference price and closes withdrawals. Permissionless.
     pub fn lock(ctx: Context<Lock>) -> Result<()> {
         crate::instructions::lock::handle_lock(ctx)
     }
 
-    /// Records the settlement price and picks a side. Permissionless.
+    /// Records the settlement price and picks a side, or voids a market
+    /// whose losing side is empty. Permissionless.
     pub fn settle(ctx: Context<Settle>) -> Result<()> {
         crate::instructions::settle::handle_settle(ctx)
     }
@@ -66,6 +69,13 @@ pub mod movex_equities {
     /// Collects a winning share, or a refund from a voided market.
     pub fn claim(ctx: Context<Claim>) -> Result<()> {
         crate::instructions::claim::handle_claim(ctx)
+    }
+
+    /// Pays a resolved position to its owner's token account. Anyone may
+    /// call it: the destination is derived from the owner, so nothing can
+    /// be sent anywhere else.
+    pub fn claim_for_owner(ctx: Context<ClaimForOwner>) -> Result<()> {
+        crate::instructions::claim_for::handle_claim_for_owner(ctx)
     }
 
     /// Releases a market that never resolved. Permissionless, and only after

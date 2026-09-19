@@ -47,8 +47,8 @@ fn cradle_to_grave() {
     assert_eq!(m.reference_price, REFERENCE_PRICE);
     assert!(m.winning_side.is_none());
 
-    // Deposits are shut once locked.
-    assert!(deposit(&mut ctx, &alice, &alice_ata, Side::Above, 10 * USDC).is_err());
+    // Withdrawals are shut once locked. The bet is live.
+    assert!(withdraw(&mut ctx, &alice, &alice_ata, Side::Above, 10 * USDC).is_err());
 
     // ---- settle -----------------------------------------------------------
     // 218.29 -> 213.90 is a 2.01% move against a 1.55% strike, so ABOVE wins.
@@ -66,16 +66,16 @@ fn cradle_to_grave() {
     // Alice holds the whole ABOVE pool, so she takes everything distributable:
     // 400 USDC pot, 1% fee, 396 USDC.
     let before = token_balance(&ctx.svm, &alice_ata);
-    claim(&mut ctx, &alice, &alice_ata).expect("alice claims");
+    claim(&mut ctx, &alice, &alice_ata, Side::Above).expect("alice claims");
     assert_eq!(token_balance(&ctx.svm, &alice_ata) - before, 396 * USDC);
 
-    assert!(position_state(&ctx.svm, &position_pda(&ctx, &alice.pubkey())).claimed);
+    assert!(position_state(&ctx.svm, &position_pda(&ctx, &alice.pubkey(), Side::Above)).claimed);
 
     // The losing side gets nothing, and is told why.
-    assert!(claim(&mut ctx, &bob, &bob_ata).is_err());
+    assert!(claim(&mut ctx, &bob, &bob_ata, Side::Below).is_err());
 
     // A second claim is refused.
-    assert!(claim(&mut ctx, &alice, &alice_ata).is_err());
+    assert!(claim(&mut ctx, &alice, &alice_ata, Side::Above).is_err());
 
     // The fee is the only thing left behind.
     assert_eq!(token_balance(&ctx.svm, &ctx.vault), 4 * USDC);
@@ -131,11 +131,14 @@ fn an_exact_tie_goes_to_below() {
     );
 }
 
+/// A side that is empty at lock no longer voids the market there: deposits
+/// may still arrive during the window. It voids at settlement, if it is
+/// still empty then, and everyone refunds in full.
 #[test]
-fn an_empty_side_voids_at_lock_and_everyone_refunds() {
+fn an_empty_side_voids_at_settle_and_everyone_refunds() {
     let mut ctx = setup();
     let params = default_params(&ctx);
-    let (lock_ts, _) = (params.lock_ts, params.settle_ts);
+    let (lock_ts, settle_ts) = (params.lock_ts, params.settle_ts);
     init_market(&mut ctx, params).unwrap();
 
     let (alice, alice_ata) = funded_wallet(&mut ctx, 1_000 * USDC);
@@ -143,16 +146,27 @@ fn an_empty_side_voids_at_lock_and_everyone_refunds() {
 
     warp_to(&mut ctx.svm, lock_ts);
     set_mock_price(&mut ctx, REFERENCE_PRICE, None).unwrap();
-    lock(&mut ctx).expect("lock still succeeds, it just voids");
+    lock(&mut ctx).expect("lock records the reference regardless");
+    assert_eq!(
+        market_state(&ctx.svm, &ctx.market).state,
+        MarketState::Locked,
+        "not voided at lock: the empty side can still be filled"
+    );
+
+    // Nobody fills it. A large move would have ABOVE win against nobody.
+    warp_to(&mut ctx.svm, settle_ts);
+    set_mock_price(&mut ctx, 21_390, None).unwrap();
+    settle(&mut ctx).expect("settle still succeeds, it just voids");
 
     let m = market_state(&ctx.svm, &ctx.market);
     assert_eq!(m.state, MarketState::Voided);
     assert!(m.winning_side.is_none());
+    assert_eq!(m.settlement_price, 21_390, "the print is still on record");
 
     // Full refund, and no fee taken: a market that did not resolve has not
     // earned one.
     let before = token_balance(&ctx.svm, &alice_ata);
-    claim(&mut ctx, &alice, &alice_ata).expect("alice refunds");
+    claim(&mut ctx, &alice, &alice_ata, Side::Above).expect("alice refunds");
     assert_eq!(token_balance(&ctx.svm, &alice_ata) - before, ABOVE_STAKE);
     assert_eq!(token_balance(&ctx.svm, &ctx.vault), 0);
 }
@@ -190,14 +204,14 @@ fn payouts_split_a_shared_pool_pro_rata() {
     //   b: 300/400 * 990 = 742.5
     let a_before = token_balance(&ctx.svm, &a_ata);
     let b_before = token_balance(&ctx.svm, &b_ata);
-    claim(&mut ctx, &a, &a_ata).unwrap();
-    claim(&mut ctx, &b, &b_ata).unwrap();
+    claim(&mut ctx, &a, &a_ata, Side::Below).unwrap();
+    claim(&mut ctx, &b, &b_ata, Side::Below).unwrap();
 
     assert_eq!(token_balance(&ctx.svm, &a_ata) - a_before, 247_500_000);
     assert_eq!(token_balance(&ctx.svm, &b_ata) - b_before, 742_500_000);
 
     // The loser gets nothing.
-    assert!(claim(&mut ctx, &c, &c_ata).is_err());
+    assert!(claim(&mut ctx, &c, &c_ata, Side::Above).is_err());
 
     // Only the fee remains.
     assert_eq!(token_balance(&ctx.svm, &ctx.vault), 10 * USDC);
@@ -275,8 +289,8 @@ fn a_dead_feed_can_be_voided_after_the_grace_period() {
     // Both sides refund in full.
     let a_before = token_balance(&ctx.svm, &alice_ata);
     let b_before = token_balance(&ctx.svm, &bob_ata);
-    claim(&mut ctx, &alice, &alice_ata).unwrap();
-    claim(&mut ctx, &bob, &bob_ata).unwrap();
+    claim(&mut ctx, &alice, &alice_ata, Side::Above).unwrap();
+    claim(&mut ctx, &bob, &bob_ata, Side::Below).unwrap();
     assert_eq!(token_balance(&ctx.svm, &alice_ata) - a_before, ABOVE_STAKE);
     assert_eq!(token_balance(&ctx.svm, &bob_ata) - b_before, BELOW_STAKE);
     assert_eq!(token_balance(&ctx.svm, &ctx.vault), 0);
@@ -383,7 +397,7 @@ fn the_fee_reaches_the_treasury() {
 
     // And the winner is still made whole afterwards.
     let before = token_balance(&ctx.svm, &alice_ata);
-    claim(&mut ctx, &alice, &alice_ata).expect("alice still claims");
+    claim(&mut ctx, &alice, &alice_ata, Side::Above).expect("alice still claims");
     assert_eq!(token_balance(&ctx.svm, &alice_ata) - before, 396 * USDC);
 
     // Vault fully drained: nothing stranded, nothing short.
@@ -408,7 +422,7 @@ fn collecting_after_claims_works_the_same() {
     let mut ctx = setup();
     let ((alice, alice_ata), _) = settled_market(&mut ctx);
 
-    claim(&mut ctx, &alice, &alice_ata).unwrap();
+    claim(&mut ctx, &alice, &alice_ata, Side::Above).unwrap();
     assert_eq!(token_balance(&ctx.svm, &ctx.vault), 4 * USDC);
 
     collect_fee(&mut ctx).expect("order does not matter");
@@ -420,15 +434,19 @@ fn collecting_after_claims_works_the_same() {
 fn a_voided_market_yields_no_fee() {
     let mut ctx = setup();
     let params = default_params(&ctx);
-    let lock_ts = params.lock_ts;
+    let (lock_ts, settle_ts) = (params.lock_ts, params.settle_ts);
     init_market(&mut ctx, params).unwrap();
 
-    // Only one side shows up, so the market voids at lock.
+    // Only one side ever shows up, so the market voids at settlement.
     let (alice, alice_ata) = funded_wallet(&mut ctx, 1_000 * USDC);
     deposit(&mut ctx, &alice, &alice_ata, Side::Above, ABOVE_STAKE).unwrap();
     warp_to(&mut ctx.svm, lock_ts);
     set_mock_price(&mut ctx, REFERENCE_PRICE, None).unwrap();
     lock(&mut ctx).unwrap();
+    warp_to(&mut ctx.svm, settle_ts);
+    set_mock_price(&mut ctx, 21_390, None).unwrap();
+    settle(&mut ctx).unwrap();
+    assert_eq!(market_state(&ctx.svm, &ctx.market).state, MarketState::Voided);
 
     assert!(
         collect_fee(&mut ctx).is_err(),
@@ -437,7 +455,7 @@ fn a_voided_market_yields_no_fee() {
     assert_eq!(token_balance(&ctx.svm, &ctx.treasury_ata), 0);
 
     // And the depositor still gets every unit back.
-    claim(&mut ctx, &alice, &alice_ata).unwrap();
+    claim(&mut ctx, &alice, &alice_ata, Side::Above).unwrap();
     assert_eq!(token_balance(&ctx.svm, &alice_ata), 1_000 * USDC);
     assert_eq!(token_balance(&ctx.svm, &ctx.vault), 0);
 }
@@ -476,14 +494,14 @@ fn nothing_can_be_claimed_before_a_market_resolves() {
     deposit(&mut ctx, &alice, &alice_ata, Side::Above, ABOVE_STAKE).unwrap();
     deposit(&mut ctx, &bob, &bob_ata, Side::Below, BELOW_STAKE).unwrap();
 
-    assert!(claim(&mut ctx, &alice, &alice_ata).is_err(), "market is Open");
+    assert!(claim(&mut ctx, &alice, &alice_ata, Side::Above).is_err(), "market is Open");
 
     warp_to(&mut ctx.svm, lock_ts);
     set_mock_price(&mut ctx, REFERENCE_PRICE, None).unwrap();
     lock(&mut ctx).unwrap();
 
     assert!(
-        claim(&mut ctx, &alice, &alice_ata).is_err(),
+        claim(&mut ctx, &alice, &alice_ata, Side::Above).is_err(),
         "market is Locked"
     );
 }

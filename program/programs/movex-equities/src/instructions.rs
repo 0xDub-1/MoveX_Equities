@@ -1,4 +1,5 @@
 pub mod claim;
+pub mod claim_for;
 pub mod collect_fee;
 pub mod deposit;
 pub mod init_market;
@@ -14,6 +15,7 @@ pub mod price_feed;
 pub mod faucet;
 
 pub use claim::*;
+pub use claim_for::*;
 pub use collect_fee::*;
 pub use deposit::*;
 pub use init_market::*;

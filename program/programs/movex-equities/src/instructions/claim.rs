@@ -4,7 +4,7 @@ use anchor_spl::token::{transfer_checked, Mint, Token, TokenAccount, TransferChe
 use crate::{
     constants::*,
     error::ErrorCode,
-    payout::{distributable, payout},
+    payout::{distributable, live_group, payout, payout_live},
     state::{Market, MarketState, Position},
 };
 
@@ -31,7 +31,7 @@ pub struct Claim<'info> {
     /// reachable from here.
     #[account(
         mut,
-        seeds = [POSITION_SEED, market.key().as_ref(), user.key().as_ref()],
+        seeds = [POSITION_SEED, market.key().as_ref(), user.key().as_ref(), position.side.as_seed()],
         bump = position.bump,
     )]
     pub position: Account<'info, Position>,
@@ -52,55 +52,69 @@ pub struct Claim<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-pub fn handle_claim(ctx: Context<Claim>) -> Result<()> {
-    require!(!ctx.accounts.position.claimed, ErrorCode::AlreadyClaimed);
-    require!(
-        ctx.accounts.position.amount > 0,
-        ErrorCode::NothingToClaim
-    );
+/// What a position is owed by the market as it resolved.
+///
+/// A voided market refunds every deposit, before and after lock, and takes
+/// no fee. A settled one pays the winning side in two parts: the money that
+/// was there before lock takes what the live group did not, and the live
+/// money takes its group's share. Either part may be zero for a given
+/// position; both are computed from pool totals alone.
+pub fn claimable(market: &Market, position: &Position) -> Result<u64> {
+    require!(!position.claimed, ErrorCode::AlreadyClaimed);
+    require!(position.amount > 0, ErrorCode::NothingToClaim);
 
-    let market = &ctx.accounts.market;
-    let position = &ctx.accounts.position;
-
-    let amount = match market.state {
+    match market.state {
         // Nothing was decided, so nothing is taken. Not even the fee: a
         // market that did not resolve has not earned one.
-        MarketState::Voided => position.amount,
+        MarketState::Voided => Ok(position.amount),
 
         MarketState::Settled => {
             let winner = market.winning_side.ok_or(ErrorCode::MarketNotResolved)?;
             require!(position.side == winner, ErrorCode::NotOnWinningSide);
 
             let pot = market.pot().ok_or(ErrorCode::MathOverflow)?;
-            let winning_pool = match winner {
-                crate::state::Side::Above => market.above_pool,
-                crate::state::Side::Below => market.below_pool,
-            };
+            let dist = distributable(pot, market.fee_bps)?;
 
-            payout(
-                position.amount,
-                distributable(pot, market.fee_bps)?,
-                winning_pool,
-            )?
+            let winning_pool = market.pool(winner);
+            let live_pool = market.live(winner);
+            let group = live_group(dist, winning_pool, live_pool)?;
+
+            let pre_lock_pool = winning_pool
+                .checked_sub(live_pool.amount)
+                .ok_or(ErrorCode::MathOverflow)?;
+            let pre_lock_amount = position
+                .amount
+                .checked_sub(position.live.amount)
+                .ok_or(ErrorCode::MathOverflow)?;
+
+            let mut total: u64 = 0;
+            if pre_lock_amount > 0 {
+                let for_pre_lock = dist.checked_sub(group).ok_or(ErrorCode::MathOverflow)?;
+                total = total
+                    .checked_add(payout(pre_lock_amount, for_pre_lock, pre_lock_pool)?)
+                    .ok_or(ErrorCode::MathOverflow)?;
+            }
+            if position.live.amount > 0 {
+                total = total
+                    .checked_add(payout_live(&position.live, group, live_pool)?)
+                    .ok_or(ErrorCode::MathOverflow)?;
+            }
+            Ok(total)
         }
 
-        MarketState::Open | MarketState::Locked => {
-            return Err(error!(ErrorCode::MarketNotResolved))
-        }
-    };
-
-    // Marked before the transfer. Anchor would unwind both on a failure
-    // anyway, but the ordering makes the intent explicit: a claim is spent
-    // whether or not the caller likes the number.
-    ctx.accounts.position.claimed = true;
-
-    if amount == 0 {
-        // A winning position so small its share truncates to nothing. The
-        // claim is still consumed, otherwise it stays open forever.
-        msg!("claim resolved to zero, position closed");
-        return Ok(());
+        MarketState::Open | MarketState::Locked => Err(error!(ErrorCode::MarketNotResolved)),
     }
+}
 
+/// Moves `amount` out of the vault, signed by the market.
+pub fn pay_from_vault<'info>(
+    market: &Account<'info, Market>,
+    vault: &Account<'info, TokenAccount>,
+    quote_mint: &Account<'info, Mint>,
+    to: &Account<'info, TokenAccount>,
+    token_program: &Program<'info, Token>,
+    amount: u64,
+) -> Result<()> {
     let underlying = market.underlying;
     let session_date = market.session_date;
     let tier_seed = market.tier.as_seed();
@@ -116,17 +130,42 @@ pub fn handle_claim(ctx: Context<Claim>) -> Result<()> {
 
     transfer_checked(
         CpiContext::new_with_signer(
-            ctx.accounts.token_program.key(),
+            token_program.key(),
             TransferChecked {
-                from: ctx.accounts.vault.to_account_info(),
-                mint: ctx.accounts.quote_mint.to_account_info(),
-                to: ctx.accounts.user_token_account.to_account_info(),
-                authority: ctx.accounts.market.to_account_info(),
+                from: vault.to_account_info(),
+                mint: quote_mint.to_account_info(),
+                to: to.to_account_info(),
+                authority: market.to_account_info(),
             },
             signer_seeds,
         ),
         amount,
-        ctx.accounts.quote_mint.decimals,
+        quote_mint.decimals,
+    )
+}
+
+pub fn handle_claim(ctx: Context<Claim>) -> Result<()> {
+    let amount = claimable(&ctx.accounts.market, &ctx.accounts.position)?;
+
+    // Marked before the transfer. Anchor would unwind both on a failure
+    // anyway, but the ordering makes the intent explicit: a claim is spent
+    // whether or not the caller likes the number.
+    ctx.accounts.position.claimed = true;
+
+    if amount == 0 {
+        // A winning position so small its share truncates to nothing. The
+        // claim is still consumed, otherwise it stays open forever.
+        msg!("claim resolved to zero, position closed");
+        return Ok(());
+    }
+
+    pay_from_vault(
+        &ctx.accounts.market,
+        &ctx.accounts.vault,
+        &ctx.accounts.quote_mint,
+        &ctx.accounts.user_token_account,
+        &ctx.accounts.token_program,
+        amount,
     )?;
 
     msg!("claimed {}", amount);

@@ -59,6 +59,18 @@ pub enum ErrorCode {
     #[msg("Price is not newer than the one already published")]
     OraclePriceNotNewer,
 
+    // -- live round ---------------------------------------------------------
+    #[msg("This market does not accept deposits after lock")]
+    LiveDepositsDisabled,
+    #[msg("Too close to settlement to deposit")]
+    LiveCutoffReached,
+    #[msg("Live maximum multiple must cover the deposit less the fee and not exceed the ceiling")]
+    LiveMaxMultipleInvalid,
+    #[msg("Live cap exponent exceeds the maximum")]
+    LiveCapExpInvalid,
+    #[msg("Live cutoff is shorter than the minimum")]
+    LiveCutoffTooShort,
+
     // -- claim --------------------------------------------------------------
     #[msg("This position has already been claimed")]
     AlreadyClaimed,

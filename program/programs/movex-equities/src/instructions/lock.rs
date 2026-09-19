@@ -7,11 +7,16 @@ use crate::{
     state::{Market, MarketState},
 };
 
-/// Freezes deposits and records the reference price.
+/// Records the reference price and closes withdrawals.
 ///
 /// Permissionless. We run a keeper, but if it dies anyone can crank a market
 /// forward with a short script, so the protocol never waits on us. That is
 /// also the honest answer to a centralisation question.
+///
+/// A one-sided pot is not voided here. Deposits may still arrive during the
+/// window, under the live cap, and a side that was empty at lock can be
+/// filled by them. Whether a market ends up with a counterparty is decided
+/// at settlement, which is the first moment it can be known.
 #[derive(Accounts)]
 pub struct Lock<'info> {
     /// Pays the fee. Anyone at all.
@@ -41,15 +46,6 @@ pub fn handle_lock(ctx: Context<Lock>) -> Result<()> {
 
     require!(market.state == MarketState::Open, ErrorCode::MarketNotOpen);
     require!(now >= market.lock_ts, ErrorCode::TooEarlyToLock);
-
-    // A pot with no counterparty is not a market. Voiding here rather than
-    // settling means the side that did show up gets every unit back instead
-    // of "winning" against nobody.
-    if market.above_pool == 0 || market.below_pool == 0 {
-        market.state = MarketState::Voided;
-        msg!("voided at lock: one side is empty");
-        return Ok(());
-    }
 
     // Deliberately not voiding on an oracle failure. A stale read one second
     // after the close is a transient condition and this transaction can

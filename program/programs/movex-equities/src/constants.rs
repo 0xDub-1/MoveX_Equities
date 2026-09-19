@@ -51,6 +51,28 @@ pub const MIN_STRIKE_BPS: u16 = 1;
 /// cannot bloat the vault's rent or produce payouts that round to nothing.
 pub const MIN_DEPOSIT: u64 = 1_000_000;
 
+// -- live round ---------------------------------------------------------------
+//
+// Deposits after lock carry a cap on what they can be paid, decaying from
+// `live_max_multiple_bps` just after lock to `1 - fee` at settlement. These
+// bound what any market may declare, in the spirit of MAX_FEE_BPS: the
+// values themselves are set per market at creation and never change after.
+
+/// Ceiling on `live_max_multiple_bps`: a live deposit may never be allowed
+/// more than five times itself, however the market was configured.
+pub const MAX_LIVE_MAX_MULTIPLE_BPS: u16 = 50_000;
+
+/// Steepest decay of the live cap. Zero is a flat cap, one linear, and
+/// three drives the cap to almost nothing by the last quarter of the window.
+pub const MAX_LIVE_CAP_EXP: u8 = 3;
+
+/// A live deposit must land at least this long before settlement.
+///
+/// The settle print is the last feed write before `settle_ts`, so a deposit
+/// closer than one feed interval could be placed knowing that print. This is
+/// the floor; a market should declare at least two intervals.
+pub const MIN_LIVE_CUTOFF_SECS: u32 = 60;
+
 /// How long past `settle_ts` a market must stay unresolved before anyone can
 /// void it and release the deposits.
 ///
