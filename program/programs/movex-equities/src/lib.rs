@@ -28,7 +28,7 @@ pub use constants::*;
 pub use instructions::*;
 pub use state::*;
 
-declare_id!("9j2X63EpuSxBSqfMKNrcbQUFzzrXiU8ok2PbUYucZ8zL");
+declare_id!("7L9xYzMLHNRtnQYB9w7Djx4UAAmW3CnJxLHhEHJnRW6Q");
 
 #[program]
 pub mod movex_equities {

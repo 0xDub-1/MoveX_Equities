@@ -12,12 +12,12 @@ import { PublicKey } from "@solana/web3.js";
 
 /** The MoveX Equities program on devnet. */
 export const PROGRAM_ID = new PublicKey(
-  process.env.NEXT_PUBLIC_PROGRAM_ID ?? "9j2X63EpuSxBSqfMKNrcbQUFzzrXiU8ok2PbUYucZ8zL",
+  process.env.NEXT_PUBLIC_PROGRAM_ID ?? "7L9xYzMLHNRtnQYB9w7Djx4UAAmW3CnJxLHhEHJnRW6Q",
 );
 
 /** USDX, the test quote asset every market is denominated in. */
 export const QUOTE_MINT = new PublicKey(
-  process.env.NEXT_PUBLIC_QUOTE_MINT ?? "FBnaipfxQK8M3ZMMM3bwnzgbgKDLPGJ2rJdUANHocBve",
+  process.env.NEXT_PUBLIC_QUOTE_MINT ?? "8opqdnKkNEgneiJWkfW8EExTfpKssRqXuR6BBY86uYCu",
 );
 
 export const CLUSTER = "devnet" as const;

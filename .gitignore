@@ -4,3 +4,4 @@
 # Devnet deployment record. Holds test-wallet secret keys.
 program/scripts/devnet.json
 program/scripts/pyth-feeds.json
+program/scripts/devnet*.json

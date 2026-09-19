@@ -30,9 +30,9 @@ const EXPECTED_AUTHORITY = "D363Wv9sERq5CyumJJbmu7AAe93Lwk9nrTaXsaxf5M2u";
 
 /** Feeds opened by init-feeds.ts, to confirm derivation agrees with reality. */
 const KNOWN_FEEDS: Record<string, string> = {
-  NVDA: "AGHVsmmpSPawAVjdt6Kz8wTHYgjdhWsEtbAJ4Z1EqT8c",
-  TSLA: "7MTEtbktfdVUNcXfkh1GqnHXz6WPd4iMRHHVFzmgSpsM",
-  SPY: "RNTbijEkEUfyYtaBuKHqxRve11RFsSzETw3du6Yz6tQ",
+  NVDA: "4rcRkTKRUNrVfE3T2PVfrkyMPJQenb7nbEQ3tQ5ktw9N",
+  TSLA: "AZvWkUvJzzgbjJXAqPk5WoxnBummhpDzgzCv6udxuU7Y",
+  SPY: "7EByBMPVYZi3Yz1vnGABe1E7eevXCtEJdWSMUnARLWC6",
 };
 
 let failures = 0;

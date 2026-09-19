@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/movex_equities.json`.
  */
 export type MovexEquities = {
-  "address": "9j2X63EpuSxBSqfMKNrcbQUFzzrXiU8ok2PbUYucZ8zL",
+  "address": "7L9xYzMLHNRtnQYB9w7Djx4UAAmW3CnJxLHhEHJnRW6Q",
   "metadata": {
     "name": "movexEquities",
     "version": "0.1.0",

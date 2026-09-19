@@ -46,7 +46,7 @@ export class KeeperStack extends cdk.Stack {
    * derived: it came from a generated keypair rather than a seed. It is also
    * public information, so there is nothing to protect by hiding it.
    */
-  private readonly quoteMint = 'FBnaipfxQK8M3ZMMM3bwnzgbgKDLPGJ2rJdUANHocBve';
+  private readonly quoteMint = '8opqdnKkNEgneiJWkfW8EExTfpKssRqXuR6BBY86uYCu';
 
   /**
    * SSM parameter holding the RPC endpoint, read at synth rather than

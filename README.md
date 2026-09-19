@@ -4,7 +4,7 @@ Volatility markets on US equities, settled on Solana.
 
 For each listed stock, every trading day, the protocol publishes three thresholds. Each threshold is a market that asks one question: will the stock move more than this, in either direction? You pick a threshold, pick a side, and the day plays out.
 
-**Program (devnet):** `9j2X63EpuSxBSqfMKNrcbQUFzzrXiU8ok2PbUYucZ8zL`
+**Program (devnet):** `7L9xYzMLHNRtnQYB9w7Djx4UAAmW3CnJxLHhEHJnRW6Q`
 
 ---
 
@@ -439,13 +439,15 @@ The crank does not act more than 20 minutes after a market's scheduled time. Pas
 ### Devnet addresses
 
 ```
-Program          9j2X63EpuSxBSqfMKNrcbQUFzzrXiU8ok2PbUYucZ8zL
-Quote mint       FBnaipfxQK8M3ZMMM3bwnzgbgKDLPGJ2rJdUANHocBve   (USDX, 6 decimals)
-Faucet           AR5q8xnQUeP9a9UcdjvXWAdaGxr8aFUBJuM1fPT8zfL9
+Program          7L9xYzMLHNRtnQYB9w7Djx4UAAmW3CnJxLHhEHJnRW6Q
+Quote mint       8opqdnKkNEgneiJWkfW8EExTfpKssRqXuR6BBY86uYCu   (USDX, 6 decimals)
+Faucet           2tE6MixqQ4aZ48wftGyAM7MTEFfB2wGGFqNdyzsQraA2
 
-PriceFeed NVDA   AGHVsmmpSPawAVjdt6Kz8wTHYgjdhWsEtbAJ4Z1EqT8c
-PriceFeed TSLA   7MTEtbktfdVUNcXfkh1GqnHXz6WPd4iMRHHVFzmgSpsM
-PriceFeed SPY    RNTbijEkEUfyYtaBuKHqxRve11RFsSzETw3du6Yz6tQ
+PriceFeed NVDA   4rcRkTKRUNrVfE3T2PVfrkyMPJQenb7nbEQ3tQ5ktw9N
+PriceFeed TSLA   AZvWkUvJzzgbjJXAqPk5WoxnBummhpDzgzCv6udxuU7Y
+PriceFeed SPY    7EByBMPVYZi3Yz1vnGABe1E7eevXCtEJdWSMUnARLWC6
+
+The first deployment, `9j2X63EpuSxBSqfMKNrcbQUFzzrXiU8ok2PbUYucZ8zL`, ran from 13 to 19 September 2026 and still holds its settled history. It predates the live round, so its account layouts differ from the ones documented here.
 ```
 
 ### Test token

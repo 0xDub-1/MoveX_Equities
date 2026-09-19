@@ -38,7 +38,7 @@ import { marketPda } from "../lib/lambdas/shared/solana";
 import { TICKERS } from "../lib/lambdas/strikes/config";
 import idlJson from "../lib/lambdas/shared/idl/movex_equities.json";
 
-const QUOTE_MINT = new PublicKey("FBnaipfxQK8M3ZMMM3bwnzgbgKDLPGJ2rJdUANHocBve");
+const QUOTE_MINT = new PublicKey("8opqdnKkNEgneiJWkfW8EExTfpKssRqXuR6BBY86uYCu");
 const KEYPAIR_PATH = `${process.env.HOME}/.config/solana/devnet.json`;
 const RPC_URL = process.env.RPC_URL ?? "https://api.devnet.solana.com";
 

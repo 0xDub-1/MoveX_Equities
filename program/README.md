@@ -110,7 +110,7 @@ Phases 1 and 2 are complete, 53 tests:
 | `init_faucet` `faucet_mint` | devnet test token |
 | `init_price_feed` `update_price` | the devnet oracle, see below |
 
-Deployed to devnet at `9j2X63EpuSxBSqfMKNrcbQUFzzrXiU8ok2PbUYucZ8zL`.
+Deployed to devnet at `7L9xYzMLHNRtnQYB9w7Djx4UAAmW3CnJxLHhEHJnRW6Q`.
 
 ## Where prices come from, stated plainly
 
