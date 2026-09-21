@@ -12,7 +12,7 @@ export default function Footer() {
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
             <Image src="/logo.png" alt="MoveX" width={88} height={22} className="h-[18px] w-auto opacity-80" />
-            <span className="border-l border-line-2 pl-3 font-display text-[12px] text-text-3">Equities</span>
+            <span className="border-l border-line-2 pl-3 font-display text-[12px] text-text-3">Markets</span>
             <span className="inline-flex h-5 items-center rounded-sm border border-line-2 px-1.5 font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-text-3">
               Devnet
             </span>
