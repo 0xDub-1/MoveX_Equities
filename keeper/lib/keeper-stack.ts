@@ -10,10 +10,12 @@ import { Schedule, ScheduleExpression, ScheduleTargetInput } from 'aws-cdk-lib/a
 import { LambdaInvoke } from 'aws-cdk-lib/aws-scheduler-targets';
 
 /**
- * MoveX Equities Keeper
+ * MoveX Keeper
  * ---------------------------------------------------------------------------
- * Five cron jobs, not a service. Each one has a single responsibility and its
- * own cadence, so a failure in one does not take the others down with it.
+ * Cron jobs, not a service. Each one has a single responsibility and its own
+ * cadence, so a failure in one does not take the others down with it.
+ *
+ * Equities, on the NYSE calendar:
  *
  *   Publisher      every minute      writes each ticker's PriceFeed
  *   HourlyMarkets  20:00 ET          creates the NEXT session's intraday
@@ -23,12 +25,26 @@ import { LambdaInvoke } from 'aws-cdk-lib/aws-scheduler-targets';
  *   Crank          every minute      locks and settles whatever is due
  *   Seeder         every 10 min      funds both sides, claims winnings (devnet)
  *
- * Every schedule declares `America/New_York` rather than a UTC hour. US
- * market close is 16:00 ET, which is 20:00 UTC in summer and 21:00 in winter:
- * a UTC cron drifts an hour on the first Sunday of November and every
- * settlement after that reads the wrong price.
+ * Crypto, around the clock in UTC:
  *
- * All five are idempotent. They ask the chain what is missing rather than
+ *   CryptoPublisher  every minute    writes each asset's PriceFeed from the
+ *                                    Hyperliquid mid
+ *   CryptoMarkets    every 10 min    creates the hourly markets for the next
+ *                                    four hours and tomorrow's daily ladder,
+ *                                    seeds and claims (devnet)
+ *   CryptoCrank      every minute    locks and settles whatever is due
+ *
+ * The two venues share the program, the wallet and this stack, and nothing
+ * else: separate lambdas, separate schedules, separate seed wallets, so an
+ * exception on one side never delays the other's settle.
+ *
+ * Every equities schedule declares `America/New_York` rather than a UTC
+ * hour. US market close is 16:00 ET, which is 20:00 UTC in summer and 21:00
+ * in winter: a UTC cron drifts an hour on the first Sunday of November and
+ * every settlement after that reads the wrong price. The crypto schedules
+ * declare UTC, which is the clock their markets keep.
+ *
+ * All of them are idempotent. They ask the chain what is missing rather than
  * remembering what they did, so a missed invocation is repaired by the next.
  */
 export class KeeperStack extends cdk.Stack {
@@ -99,6 +115,7 @@ export class KeeperStack extends cdk.Stack {
     entry: string,
     handler: string,
     timeout: Duration,
+    options: { reservedConcurrency?: number } = {},
   ): lambda.NodejsFunction {
     return new lambda.NodejsFunction(this, id, {
       runtime: Runtime.NODEJS_20_X,
@@ -106,6 +123,7 @@ export class KeeperStack extends cdk.Stack {
       handler,
       memorySize: 512,
       timeout,
+      reservedConcurrentExecutions: options.reservedConcurrency,
       environment: this.lambdaEnv(),
       bundling: {
         // The Anchor IDL is imported as JSON and has to travel with the
@@ -170,6 +188,36 @@ export class KeeperStack extends cdk.Stack {
       'handler',
       Duration.seconds(60),
     );
+
+    // -- crypto ----------------------------------------------------------------
+
+    // One quote request and up to one transaction per listed asset.
+    this.lambdas['cryptoPublisher'] = this.makeLambda(
+      'CryptoPublisherLambda',
+      'lib/lambdas/crypto/publisher.ts',
+      'handler',
+      Duration.seconds(60),
+    );
+
+    // Creates what is missing, then seeds and claims across every crypto
+    // market in play. A tick after an outage can create four hours plus a
+    // ladder and fund all of them, and each deposit waits for confirmation.
+    // Concurrency of one: two overlapping ticks would race each other into
+    // funding the same market twice.
+    this.lambdas['cryptoMarkets'] = this.makeLambda(
+      'CryptoMarketsLambda',
+      'lib/lambdas/crypto/markets.ts',
+      'handler',
+      Duration.minutes(8),
+      { reservedConcurrency: 1 },
+    );
+
+    this.lambdas['cryptoCrank'] = this.makeLambda(
+      'CryptoCrankLambda',
+      'lib/lambdas/crypto/crank.ts',
+      'handler',
+      Duration.minutes(2),
+    );
   }
 
   // =========================================================================
@@ -201,7 +249,16 @@ export class KeeperStack extends cdk.Stack {
     // Stored as a String, not a SecureString, so no kms:Decrypt is needed.
     // If it is ever converted, this policy needs a matching kms:Decrypt on
     // the alias/aws/ssm key or every lambda starts failing at cold start.
-    for (const key of ['publisher', 'hourlyMarkets', 'dailyMarkets', 'crank', 'seeder']) {
+    for (const key of [
+      'publisher',
+      'hourlyMarkets',
+      'dailyMarkets',
+      'crank',
+      'seeder',
+      'cryptoPublisher',
+      'cryptoMarkets',
+      'cryptoCrank',
+    ]) {
       this.lambdas[key].addToRolePolicy(policy);
     }
   }
@@ -318,6 +375,37 @@ export class KeeperStack extends cdk.Stack {
       'seeder',
       ScheduleExpression.cron({ minute: '5-55/10', hour: '9-20', weekDay: 'MON-FRI', timeZone: ny }),
       'Fund both sides of open markets and claim seed-wallet winnings',
+    );
+
+    // -- crypto ----------------------------------------------------------------
+    //
+    // No weekday, no hour range, no calendar: crypto trades every minute of
+    // the year and the markets keep UTC, so the schedules say UTC outright.
+    const utc = TimeZone.ETC_UTC;
+
+    this.schedule(
+      'CryptoPublisherSchedule',
+      'cryptoPublisher',
+      ScheduleExpression.cron({ minute: '*', timeZone: utc }),
+      'Publish crypto mids into their PriceFeed accounts, around the clock',
+    );
+
+    this.schedule(
+      'CryptoCrankSchedule',
+      'cryptoCrank',
+      ScheduleExpression.cron({ minute: '*', timeZone: utc }),
+      'Lock and settle crypto markets whose moment has arrived',
+    );
+
+    // Seven minutes past, then every ten. Off the hour so the tick that
+    // creates the next hourly market never shares a minute with the crank
+    // locking the current one, and early enough in the hour that the market
+    // four hours out has almost its whole window.
+    this.schedule(
+      'CryptoMarketsSchedule',
+      'cryptoMarkets',
+      ScheduleExpression.cron({ minute: '7/10', timeZone: utc }),
+      'Create the next four hourly markets and the next daily ladder, seed and claim',
     );
   }
 

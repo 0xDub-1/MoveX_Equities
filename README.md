@@ -327,6 +327,8 @@ Pyth's Hermes API has required a paid key since August 2026, and the sponsored e
 
 The account mirrors the shape of a Pyth sponsored feed: one fixed address per ticker, continuously updated, read by the program and the frontend alike. The two sources sit behind the same interface and are selected at compile time. The production build contains no instruction capable of writing a price.
 
+Equity feeds are written from the Yahoo Finance quote during the NYSE session. Crypto feeds (BTC, ETH, SOL) are written every minute, around the clock, from the Hyperliquid mid, which is also the tape their ladders are calibrated on. Each feed names its publisher at creation and refuses any other signer.
+
 ```
 PriceFeed
   publisher      Pubkey     only key permitted to write
@@ -494,7 +496,7 @@ One `Position` per user per market per side. The side is part of the account's a
 
 ## 9. Keeper
 
-Five Lambda functions deployed with AWS CDK. Each is idempotent: it derives the set of accounts that should exist or be acted on, reads their current state, and performs only what is outstanding. A missed invocation is corrected by the next one.
+Eight Lambda functions deployed with AWS CDK, five for equities on the NYSE calendar and three for crypto around the clock in UTC. Each is idempotent: it derives the set of accounts that should exist or be acted on, reads their current state, and performs only what is outstanding. A missed invocation is corrected by the next one.
 
 | Function | Schedule | Responsibility |
 |---|---|---|
@@ -503,10 +505,15 @@ Five Lambda functions deployed with AWS CDK. Each is idempotent: it derives the 
 | DailyMarkets | 15:55 ET, weekdays | Create the daily markets that lock at the next session's close |
 | Crank | Every minute, weekdays | `lock` and `settle` due markets, bundling `update_price` |
 | Seeder | Every 10 minutes, weekdays | Devnet only. Funds both sides of open markets from six derived wallets, puts one deposit on a side still empty during the live window, and claims their winnings |
+| CryptoPublisher | Every minute, UTC, every day | Write `PriceFeed` for each crypto asset from the Hyperliquid mid |
+| CryptoMarkets | Every 10 minutes, UTC, every day | Create the hourly markets for the next four hours and the daily ladder for the next midnight UTC, recalibrating from the last twenty closed bars whenever one is missing; then fund both sides from a second block of six derived wallets and claim |
+| CryptoCrank | Every minute, UTC, every day | `lock` and `settle` due crypto markets on the Hyperliquid mid, bundling `update_price` |
 
 The signing key is read from SSM Parameter Store at cold start and cached for the container lifetime. IAM grants `ssm:GetParameter` on that single parameter ARN and nothing else.
 
-Quote source is the Yahoo Finance chart API. Daily calibration uses daily bars; hourly calibration uses hourly bars filtered to regular session hours. Daily settlement uses the official close from the daily bar; hourly settlement uses the current price.
+The equities quote source is the Yahoo Finance chart API. Daily calibration uses daily bars; hourly calibration uses hourly bars filtered to regular session hours. Daily settlement uses the official close from the daily bar; hourly settlement uses the current price.
+
+The crypto quote source is Hyperliquid: `allMids` for the price, `candleSnapshot` for calibration. An hourly market locks on the hour and settles on the next; a daily market locks at midnight UTC and settles at the midnight after. Both lock and settle record the mid. Hourly markets run on BTC, daily ladders on BTC, ETH and SOL; the list lives in `keeper/lib/lambdas/shared/crypto-config.ts` and listing another asset is one line there plus one feed opened on chain. Crypto hourly ids carry the year (`260921-18`) so an address never collides with the same hour a year later.
 
 The crank does not act more than 20 minutes after a market's scheduled time. Past that, the market is left to void.
 
@@ -524,6 +531,9 @@ Faucet           2tE6MixqQ4aZ48wftGyAM7MTEFfB2wGGFqNdyzsQraA2
 PriceFeed NVDA   4rcRkTKRUNrVfE3T2PVfrkyMPJQenb7nbEQ3tQ5ktw9N
 PriceFeed TSLA   AZvWkUvJzzgbjJXAqPk5WoxnBummhpDzgzCv6udxuU7Y
 PriceFeed SPY    7EByBMPVYZi3Yz1vnGABe1E7eevXCtEJdWSMUnARLWC6
+PriceFeed BTC    BA3NNPJMEFv8FFSETciNsHDKGhhEKcbGXCBEZ5xaLr6s
+PriceFeed ETH    9rZMrfkDGHWJC7Zdzxwys8vQq4di8MX3JGJpkj4akP4R
+PriceFeed SOL    BZwxb5w5Xt459vpqCmeWj8i3DvDckp9pQkTZGQq93hyW
 
 The first deployment, `9j2X63EpuSxBSqfMKNrcbQUFzzrXiU8ok2PbUYucZ8zL`, ran from 13 to 19 September 2026 and still holds its settled history. It predates the live round, so its account layouts differ from the ones documented here.
 ```
@@ -621,7 +631,7 @@ The app needs no configuration to run against the live devnet deployment. A wall
 
 **Hourly markets measure intraday movement.** They are calibrated separately and presented as a distinct instrument. The daily product measures close to close for the reasons given in section 5.
 
-**Single price source.** The `PriceFeed` account and program checks support multiple sources; the keeper currently publishes from one.
+**Single price source.** The `PriceFeed` account and program checks support multiple sources; the keeper currently publishes from one per venue, Yahoo Finance for equities and the Hyperliquid mid for crypto.
 
 **Informed mid-window deposits are allowed.** A deposit made during the live round with a better read of the session than the pre-lock money had earns up to the cap that moment allows, at the expense of the losing side. The cap bounds it; it does not remove it. See section 3.
 

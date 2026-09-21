@@ -18,8 +18,16 @@ const RPC = KEY
 const KEYPAIR_PATH = `${process.env.HOME}/.config/solana/devnet.json`;
 const OUT = new URL("./devnet.json", import.meta.url);
 
-/** Right-padded to 8 bytes, matching the program's PDA seed. */
-const TICKERS = ["NVDA", "TSLA", "SPY"];
+/**
+ * Every underlying that gets a keeper feed: the equities the equities
+ * keeper publishes and the crypto assets the crypto keeper publishes. Both
+ * lists must match their keeper configuration (keeper/lib/lambdas/shared/
+ * config.ts and crypto-config.ts). Listing a new asset is one entry here and
+ * one run of this script; feeds already open are left alone.
+ *
+ * Right-padded to 8 bytes, matching the program's PDA seed.
+ */
+const TICKERS = ["NVDA", "TSLA", "SPY", "BTC", "ETH", "SOL"];
 
 function pad8(sym: string): Buffer {
   const b = Buffer.alloc(8, 0x20); // space padded

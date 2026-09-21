@@ -61,12 +61,51 @@ instead of falling back to Docker.
 
 | Resource | Schedule | Does |
 |---|---|---|
-| `ComputeStrikesLambda` | 15:55 `America/New_York`, MON-FRI | Calibrates every ticker's ladder, logs it |
+| `PublisherLambda` | every minute, MON-FRI, `America/New_York` | Writes each equity's PriceFeed from the Yahoo quote |
+| `HourlyMarketsLambda` | 20:00 and 09:00 ET, MON-FRI | Creates the next session's intraday markets, with a morning backstop |
+| `DailyMarketsLambda` | 15:55 and 09:00 ET, MON-FRI | Creates the next close-to-close ladders, with a morning backstop |
+| `CrankLambda` | every minute, MON-FRI | Locks and settles due equities markets |
+| `SeederLambda` | every 10 minutes, 09:00 to 20:00 ET, MON-FRI | Devnet. Funds both sides from seed wallets 0 to 5, claims |
+| `CryptoPublisherLambda` | every minute, `Etc/UTC` | Writes each crypto asset's PriceFeed from the Hyperliquid mid |
+| `CryptoMarketsLambda` | 7 past, every 10 minutes, `Etc/UTC` | Creates the hourly markets for the next four hours and tomorrow's daily ladder, then funds both sides from seed wallets 6 to 11 and claims |
+| `CryptoCrankLambda` | every minute, `Etc/UTC` | Locks and settles due crypto markets on the Hyperliquid mid |
+| `ComputeStrikesLambda` | on demand | Calibrates every equity's ladder, logs it |
 
-The timezone is declared rather than baked into a UTC cron. US close is 16:00
-ET, which is 20:00 UTC in summer and 21:00 UTC in winter. A UTC cron silently
-drifts an hour on the first Sunday of November, and every settlement after
-that reads the wrong price.
+The equities timezone is declared rather than baked into a UTC cron. US close
+is 16:00 ET, which is 20:00 UTC in summer and 21:00 UTC in winter. A UTC cron
+silently drifts an hour on the first Sunday of November, and every settlement
+after that reads the wrong price. Crypto keeps UTC because its markets do: an
+hourly market locks on the hour and settles on the next, a daily one locks at
+midnight UTC and settles at the midnight after.
+
+## The crypto venue
+
+Same program, same wallet, same stack, and nothing else shared: its own
+lambdas, its own schedules, its own block of seed wallets. An exception on
+one side never delays the other's settle.
+
+Listing an asset is one line in `lib/lambdas/shared/crypto-config.ts`, one run
+of `program/scripts/init-feeds.ts` with the symbol added to its list, and one
+line in the frontend's registry. Everything else derives from the registry:
+which feeds the publisher writes, which hourly and daily markets exist, which
+candidates the crank and the seeder walk.
+
+Prices are Hyperliquid mids, read with one `allMids` call for every listed
+asset. Ladders come from `candleSnapshot`, 1h bars for hourly markets and 1d
+bars for daily ones, recalibrated from the last twenty closed bars every time
+a market is created; `startTime` is mandatory on that endpoint. The bar in
+progress is dropped before anything is measured. Lock and settle record the
+same mid the ladder was calibrated on.
+
+Hourly ids carry the year, `260921-18`, because a market's address is derived
+from its id and the account never goes away; the equities form would collide
+with itself twelve months later. Nine characters still read as hourly and ten
+as daily everywhere ids are read.
+
+```bash
+npx tsx scripts/crypto-preview.ts        # ladders, slots and candidates right now
+RPC_URL=... npx tsx scripts/crypto-preview.ts   # plus which of them exist on chain
+```
 
 Cron cannot express market holidays. It does not matter yet: on a holiday the
 provider returns no new session, so the trailing window is unchanged and the

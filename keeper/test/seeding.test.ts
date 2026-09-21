@@ -1,4 +1,6 @@
 import {
+  CRYPTO_SEED_WALLET_COUNT,
+  CRYPTO_SEED_WALLET_OFFSET,
   DEPOSIT_MAX,
   DEPOSIT_MIN,
   DEPOSITORS_PER_MARKET,
@@ -6,6 +8,7 @@ import {
   chooseSide,
   depositAmount,
   seedBytes,
+  seedWalletIndices,
   shuffle,
 } from '../lib/lambdas/shared/seeding';
 
@@ -37,6 +40,36 @@ describe('seedBytes', () => {
   it('changes with the publisher secret', () => {
     const other = Uint8Array.from({ length: 64 }, (_, i) => 99 - i);
     expect(Buffer.from(seedBytes(secret, 0))).not.toEqual(Buffer.from(seedBytes(other, 0)));
+  });
+});
+
+describe('seedWalletIndices', () => {
+  /**
+   * Two venues, two disjoint blocks of wallets. Equities keep the indices
+   * they have always had, so their wallets, balances and positions are
+   * untouched by crypto arriving next to them.
+   */
+  it('gives equities the first block, unchanged', () => {
+    expect(seedWalletIndices('equities')).toEqual([0, 1, 2, 3, 4, 5]);
+  });
+
+  it('gives crypto the block right after', () => {
+    expect(seedWalletIndices('crypto')).toEqual([6, 7, 8, 9, 10, 11]);
+    expect(CRYPTO_SEED_WALLET_OFFSET).toBe(SEED_WALLET_COUNT);
+    expect(seedWalletIndices('crypto')).toHaveLength(CRYPTO_SEED_WALLET_COUNT);
+  });
+
+  it('never lets the two venues share a wallet', () => {
+    const equities = new Set(seedWalletIndices('equities'));
+    for (const i of seedWalletIndices('crypto')) expect(equities.has(i)).toBe(false);
+  });
+
+  it('derives twelve distinct wallets from one secret', () => {
+    const seen = new Set<string>();
+    for (const i of [...seedWalletIndices('equities'), ...seedWalletIndices('crypto')]) {
+      seen.add(Buffer.from(seedBytes(secret, i)).toString('hex'));
+    }
+    expect(seen.size).toBe(SEED_WALLET_COUNT + CRYPTO_SEED_WALLET_COUNT);
   });
 });
 

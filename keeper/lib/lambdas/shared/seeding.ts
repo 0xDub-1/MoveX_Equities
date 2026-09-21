@@ -23,6 +23,24 @@ export type Rng = () => number;
 export const SEED_WALLET_COUNT = 6;
 
 /**
+ * The crypto venue spends its own block of wallets, right after the equities
+ * block: indices 6 to 11. Twelve wallets in all, two disjoint budgets, so a
+ * day where one venue runs its allowance down never leaves the other's
+ * markets one-sided. The derivation is the same; only the indices differ.
+ */
+export const CRYPTO_SEED_WALLET_OFFSET = SEED_WALLET_COUNT;
+export const CRYPTO_SEED_WALLET_COUNT = 6;
+
+export type SeedVenue = "equities" | "crypto";
+
+/** The derivation indices a venue may spend. */
+export function seedWalletIndices(venue: SeedVenue): number[] {
+  const start = venue === "equities" ? 0 : CRYPTO_SEED_WALLET_OFFSET;
+  const count = venue === "equities" ? SEED_WALLET_COUNT : CRYPTO_SEED_WALLET_COUNT;
+  return Array.from({ length: count }, (_, i) => start + i);
+}
+
+/**
  * How many wallets back one market.
  *
  * Two is the floor, because both sides have to hold something or the market

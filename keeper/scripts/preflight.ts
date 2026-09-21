@@ -23,8 +23,11 @@ import {
   closeMinutes,
 } from "../lib/lambdas/shared/calendar";
 import { PUBLISHED_TICKERS, HOURLY_TICKER } from "../lib/lambdas/shared/config";
+import { CRYPTO_ASSETS, coinOf } from "../lib/lambdas/shared/crypto-config";
+import { allMids, midToQuote } from "../lib/lambdas/shared/hyperliquid";
 import { getKeypair, getProgram, priceFeedPda, marketPda } from "../lib/lambdas/shared/solana";
 import { liveQuote } from "../lib/lambdas/shared/quotes";
+import { hourlySlotsAhead } from "../lib/lambdas/shared/utc-sessions";
 
 const EXPECTED_AUTHORITY = "D363Wv9sERq5CyumJJbmu7AAe93Lwk9nrTaXsaxf5M2u";
 
@@ -33,7 +36,12 @@ const KNOWN_FEEDS: Record<string, string> = {
   NVDA: "4rcRkTKRUNrVfE3T2PVfrkyMPJQenb7nbEQ3tQ5ktw9N",
   TSLA: "AZvWkUvJzzgbjJXAqPk5WoxnBummhpDzgzCv6udxuU7Y",
   SPY: "7EByBMPVYZi3Yz1vnGABe1E7eevXCtEJdWSMUnARLWC6",
+  BTC: "BA3NNPJMEFv8FFSETciNsHDKGhhEKcbGXCBEZ5xaLr6s",
+  ETH: "9rZMrfkDGHWJC7Zdzxwys8vQq4di8MX3JGJpkj4akP4R",
+  SOL: "BZwxb5w5Xt459vpqCmeWj8i3DvDckp9pQkTZGQq93hyW",
 };
+
+const nowSecFor = (at: Date) => Math.floor(at.getTime() / 1000);
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = "") {
@@ -61,7 +69,8 @@ async function main() {
   check("publisher can pay fees", balance > 0.05 * 1e9, `${balance / 1e9} SOL`);
 
   console.log("\n=== 3. price feed derivation against the chain ===");
-  for (const ticker of PUBLISHED_TICKERS) {
+  const cryptoSymbols = CRYPTO_ASSETS.map((a) => a.symbol);
+  for (const ticker of [...PUBLISHED_TICKERS, ...cryptoSymbols]) {
     const derived = priceFeedPda(program.programId, ticker);
     const expected = KNOWN_FEEDS[ticker];
     check(`${ticker} pda`, derived.toBase58() === expected, derived.toBase58());
@@ -123,6 +132,26 @@ async function main() {
       );
     } catch (err) {
       check(`${ticker} quote`, false, err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  console.log("\n=== 7. crypto: mids and the next hourly slots ===");
+  try {
+    const mids = await allMids();
+    const nowSec = Math.floor(Date.now() / 1000);
+    for (const asset of CRYPTO_ASSETS) {
+      const quote = midToQuote(mids[coinOf(asset.symbol)], nowSec, coinOf(asset.symbol));
+      console.log(`  ok    ${asset.symbol} ${quote.price.toString()}  read just now`);
+    }
+  } catch (err) {
+    check("hyperliquid mids", false, err instanceof Error ? err.message : String(err));
+  }
+  for (const asset of CRYPTO_ASSETS) {
+    if (!asset.hourly) continue;
+    for (const slot of hourlySlotsAhead(nowSecFor(new Date()))) {
+      const market = marketPda(program.programId, asset.symbol, slot.sessionId, "fair");
+      const exists = await program.provider.connection.getAccountInfo(market);
+      console.log(`        ${asset.symbol} ${slot.sessionId}  ${exists ? "already created" : "not yet"}  ${market.toBase58()}`);
     }
   }
 
