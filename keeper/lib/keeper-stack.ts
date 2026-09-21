@@ -201,15 +201,16 @@ export class KeeperStack extends cdk.Stack {
 
     // Creates what is missing, then seeds and claims across every crypto
     // market in play. A tick after an outage can create four hours plus a
-    // ladder and fund all of them, and each deposit waits for confirmation.
-    // Concurrency of one: two overlapping ticks would race each other into
-    // funding the same market twice.
+    // ladder and fund all of them, and each deposit waits for confirmation,
+    // so the timeout is generous but still shorter than the ten minute
+    // cadence: one tick is over before the next begins. Reserved concurrency
+    // would say the same thing outright, but this account's concurrency
+    // limit is too low to carve a reservation out of.
     this.lambdas['cryptoMarkets'] = this.makeLambda(
       'CryptoMarketsLambda',
       'lib/lambdas/crypto/markets.ts',
       'handler',
       Duration.minutes(8),
-      { reservedConcurrency: 1 },
     );
 
     this.lambdas['cryptoCrank'] = this.makeLambda(

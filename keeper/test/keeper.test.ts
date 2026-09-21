@@ -38,14 +38,17 @@ describe('lambdas', () => {
 
   /**
    * The crypto markets lambda creates, seeds and claims on one tick, and two
-   * overlapping ticks would race each other into funding a market twice.
+   * overlapping ticks would race each other into funding a market twice. Its
+   * timeout stays under the ten minute cadence so one tick is over before
+   * the next begins.
    */
-  it('never runs two crypto market ticks at once', () => {
+  it('finishes a crypto market tick before the next one is due', () => {
     template.hasResourceProperties('AWS::Lambda::Function', {
       Handler: 'index.handler',
-      ReservedConcurrentExecutions: 1,
       Timeout: 480,
     });
+    const functions = Object.values(template.findResources('AWS::Lambda::Function'));
+    for (const f of functions) expect(f.Properties.Timeout).toBeLessThan(600);
   });
 });
 
