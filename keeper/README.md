@@ -105,6 +105,7 @@ as daily everywhere ids are read.
 ```bash
 npx tsx scripts/crypto-preview.ts        # ladders, slots and candidates right now
 RPC_URL=... npx tsx scripts/crypto-preview.ts   # plus which of them exist on chain
+RPC_URL=... npx tsx scripts/crypto-tick.ts      # one tick by hand: publisher, markets, crank
 ```
 
 Cron cannot express market holidays. It does not matter yet: on a holiday the

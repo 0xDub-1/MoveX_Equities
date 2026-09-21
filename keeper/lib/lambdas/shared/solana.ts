@@ -7,7 +7,7 @@
 
 import { SSMClient, GetParameterCommand } from "@aws-sdk/client-ssm";
 import { AnchorProvider, BN, Program, Wallet, type Idl } from "@coral-xyz/anchor";
-import { Connection, Keypair, PublicKey } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, type AccountInfo } from "@solana/web3.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 
 import idlJson from "./idl/movex_equities.json";
@@ -117,6 +117,22 @@ export async function getProgram(): Promise<Program> {
   // copy can silently lag the program it claims to describe.
   cachedProgram = new Program(idlJson as Idl, provider);
   return cachedProgram;
+}
+
+/**
+ * `getMultipleAccountsInfo` in slices of a hundred keys, the RPC's limit per
+ * call. The candidate lists grow with every listed asset, and a list that
+ * crossed the limit would fail every tick rather than one.
+ */
+export async function getAccountInfos(
+  connection: Connection,
+  keys: readonly PublicKey[],
+): Promise<(AccountInfo<Buffer> | null)[]> {
+  const out: (AccountInfo<Buffer> | null)[] = [];
+  for (let i = 0; i < keys.length; i += 100) {
+    out.push(...(await connection.getMultipleAccountsInfo(keys.slice(i, i + 100))));
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

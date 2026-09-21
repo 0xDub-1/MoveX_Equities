@@ -48,6 +48,7 @@ import {
   bn,
   faucetClaimPda,
   faucetPda,
+  getAccountInfos,
   getKeypair,
   getProgram,
   marketPda,
@@ -129,9 +130,36 @@ export async function runSeeder(
   await program.provider.sendAndConfirm!(ataTx);
 
   const accounts = program.account as unknown as {
-    market: { fetch(a: PublicKey): Promise<any> };
-    position: { fetch(a: PublicKey): Promise<any> };
     faucetClaim: { fetch(a: PublicKey): Promise<any> };
+  };
+  // A Program's coder keys layouts by the camelCased names, `market` and
+  // `position`, the same ones `program.account` answers to. Only a coder
+  // built straight from the IDL file wants `Market`.
+  const decode = (name: "market" | "position", data: Buffer): any =>
+    program.coder.accounts.decode(name, data);
+
+  /**
+   * Every seed wallet's position on both sides of one market, in one read.
+   *
+   * Twelve fetches per market per tick, times every market in play, was
+   * the seeder's whole request budget and the reason the RPC answered 429
+   * to the crank next to it. Keyed by wallet so a shuffled walk can ask.
+   */
+  const positionsOn = async (market: PublicKey): Promise<Map<string, any[]>> => {
+    const keys = wallets.flatMap((w) =>
+      SIDES.map((s) => positionPda(program.programId, market, w.keypair.publicKey, s)),
+    );
+    const infos = await getAccountInfos(connection, keys);
+    const out = new Map<string, any[]>();
+    wallets.forEach((w, wi) => {
+      const held: any[] = [];
+      SIDES.forEach((_, si) => {
+        const info = infos[wi * SIDES.length + si];
+        if (info) held.push(decode("position", info.data));
+      });
+      out.set(w.keypair.publicKey.toBase58(), held);
+    });
+    return out;
   };
 
   // -- USDX from the faucet, once the cooldown allows -------------------------
@@ -172,7 +200,7 @@ export async function runSeeder(
 
   // -- markets -----------------------------------------------------------------
   const addresses = specs.map((s) => marketPda(program.programId, s.symbol, s.sessionId, s.tier));
-  const infos = await connection.getMultipleAccountsInfo(addresses);
+  const infos = await getAccountInfos(connection, addresses);
 
   const deposited: string[] = [];
   const claimed: string[] = [];
@@ -196,14 +224,15 @@ export async function runSeeder(
   const toClaim: Target[] = [];
 
   for (let i = 0; i < specs.length; i++) {
-    if (!infos[i]) continue;
+    const info = infos[i];
+    if (!info) continue;
     const spec = specs[i];
     const market = addresses[i];
     const label = `${spec.symbol}/${spec.sessionId}/${spec.tier}`;
 
     let m: any;
     try {
-      m = await accounts.market.fetch(market);
+      m = decode("market", info.data);
     } catch {
       continue;
     }
@@ -260,29 +289,19 @@ export async function runSeeder(
     const wanted = target.rescue ? 1 : DEPOSITORS_PER_MARKET;
     let backers = 0;
 
+    const held = await positionsOn(market);
+
     // Shuffled so the wallets behind a market, and the one that lands the
     // forced side, differ from market to market.
     for (const w of shuffle(wallets)) {
       if (backers >= wanted) break;
 
       // A wallet is in if it holds either side. Positions are one per side,
-      // so both addresses are checked. Already in counts: otherwise every
-      // tick would pull in another wallet until all of them were behind the
-      // same market.
-      let alreadyIn = false;
-      for (const s of SIDES) {
-        try {
-          const p = await accounts.position.fetch(
-            positionPda(program.programId, market, w.keypair.publicKey, s),
-          );
-          if (Number(p.amount) > 0) {
-            alreadyIn = true;
-            break;
-          }
-        } catch {
-          // No position on that side.
-        }
-      }
+      // so both are checked. Already in counts: otherwise every tick would
+      // pull in another wallet until all of them were behind the same market.
+      const alreadyIn = (held.get(w.keypair.publicKey.toBase58()) ?? []).some(
+        (p) => Number(p.amount) > 0,
+      );
       if (alreadyIn) {
         backers++;
         continue;
@@ -346,15 +365,12 @@ export async function runSeeder(
   // winning position is whatever the draw did on the way in, and an
   // unclaimed one is money the next day's markets are counting on.
   for (const { label, market, vault } of toClaim) {
+    const held = await positionsOn(market);
     for (const w of wallets) {
-      for (const side of SIDES) {
+      const mine = held.get(w.keypair.publicKey.toBase58()) ?? [];
+      for (const p of mine) {
+        const side: (typeof SIDES)[number] = Object.keys(p.side)[0] === "above" ? "above" : "below";
         const position = positionPda(program.programId, market, w.keypair.publicKey, side);
-        let p: any;
-        try {
-          p = await accounts.position.fetch(position);
-        } catch {
-          continue; // never deposited on this side
-        }
         if (p.claimed || Number(p.amount) === 0) continue;
 
         // A losing position has nothing to claim and the program says so.

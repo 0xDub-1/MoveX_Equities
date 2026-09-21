@@ -24,7 +24,7 @@ import { CRANK_GRACE_MINUTES, VOID_GRACE_SECS } from "./config";
 import { needsPriceUpdate } from "./feed";
 import type { Tier } from "./markets";
 import type { Quote } from "./quotes";
-import { bn, getProgram, marketPda, priceFeedPda } from "./solana";
+import { bn, getAccountInfos, getProgram, marketPda, priceFeedPda } from "./solana";
 
 export interface CrankSpec {
   symbol: string;
@@ -56,11 +56,17 @@ export async function runCrank(options: CrankRunOptions): Promise<CrankResult> {
 
   const addresses = specs.map((s) => marketPda(program.programId, s.symbol, s.sessionId, s.tier));
 
-  const infos = await program.provider.connection.getMultipleAccountsInfo(addresses);
+  // One read for every candidate, decoded here rather than fetched again one
+  // by one: the account data is already in hand, and a fetch per market was
+  // a request per market per minute, on both venues, against one rate limit.
+  const infos = await getAccountInfos(program.provider.connection, addresses);
   const accounts = program.account as unknown as {
-    market: { coder: unknown; fetch(a: PublicKey): Promise<any> };
     priceFeed: { fetch(a: PublicKey): Promise<any> };
   };
+  // A Program's coder keys layouts by the camelCased name, `market`, the same
+  // one `program.account.market` answers to. Only a coder built straight from
+  // the IDL file wants `Market`.
+  const decodeMarket = (data: Buffer): any => program.coder.accounts.decode("market", data);
 
   /**
    * The publish time each feed currently carries, read once per ticker and
@@ -86,13 +92,14 @@ export async function runCrank(options: CrankRunOptions): Promise<CrankResult> {
   const failed: string[] = [];
 
   for (let i = 0; i < specs.length; i++) {
-    if (!infos[i]) continue; // never created, nothing to do
+    const info = infos[i];
+    if (!info) continue; // never created, nothing to do
 
     const spec = specs[i];
     const label = `${spec.symbol}/${spec.sessionId}/${spec.tier}`;
 
     try {
-      const market = await accounts.market.fetch(addresses[i]);
+      const market = decodeMarket(info.data);
       const state = Object.keys(market.state)[0];
       const lockTs = Number(market.lockTs);
       const settleTs = Number(market.settleTs);

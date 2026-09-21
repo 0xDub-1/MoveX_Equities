@@ -18,14 +18,14 @@
 // nothing is missing costs a handful of account reads and no candle request.
 
 import { Logger } from "@aws-lambda-powertools/logger";
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, type Connection } from "@solana/web3.js";
 
 import { CRYPTO_ASSETS, CRYPTO_HOURLY_TIER, coinOf } from "../shared/crypto-config";
 import { cryptoLadder, type Ladder } from "../shared/hyperliquid";
 import { ensureMarkets, type MarketSpec } from "../shared/markets";
 import { runSeeder } from "../shared/seed-run";
 import { seedWalletIndices } from "../shared/seeding";
-import { getProgram, marketPda } from "../shared/solana";
+import { getAccountInfos, getProgram, marketPda } from "../shared/solana";
 import {
   cryptoCandidates,
   dailySlotsAhead,
@@ -105,14 +105,14 @@ export async function missingSpecs(nowSec: number): Promise<MarketSpec[]> {
 }
 
 async function absent<T extends { slot: UtcSlot; tier: "tight" | "fair" | "wide" }>(
-  connection: { getMultipleAccountsInfo(keys: PublicKey[]): Promise<(unknown | null)[]> },
+  connection: Connection,
   wanted: T[],
   symbol: string,
 ): Promise<T[]> {
   if (wanted.length === 0) return [];
   const program = await getProgram();
   const keys = wanted.map((w) => marketPda(program.programId, symbol, w.slot.sessionId, w.tier));
-  const infos = await connection.getMultipleAccountsInfo(keys);
+  const infos = await getAccountInfos(connection, keys);
   return wanted.filter((_, i) => !infos[i]);
 }
 
