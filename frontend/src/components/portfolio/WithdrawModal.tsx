@@ -10,7 +10,8 @@
 
 import { useState } from "react";
 
-import { fmtEtDateTime } from "@/lib/calendar";
+import { venueOfSymbol } from "@/lib/assets";
+import { fmtDateTime } from "@/lib/clock";
 import { QUOTE_DECIMALS } from "@/lib/config";
 import { fmtUsdx, toBase } from "@/lib/format";
 import { isDepositable, type MarketView, type Side } from "@/lib/market";
@@ -152,7 +153,7 @@ export default function WithdrawModal({
           <p className="text-[11.5px] leading-relaxed text-text-3">
             {locked
               ? "This market has locked. Withdrawals are closed and the stake rides to settlement."
-              : `Withdrawals are open until the market locks at ${fmtEtDateTime(row.market.lockTs)}.`}
+              : `Withdrawals are open until the market locks at ${fmtDateTime(row.market.lockTs, venueOfSymbol(row.market.symbol))}.`}
           </p>
         </div>
       )}

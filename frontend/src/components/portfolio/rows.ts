@@ -6,8 +6,11 @@
 // the two once and every panel reads the same row: the phase, what a claim
 // would pay, what the position made or lost.
 
-import { fmtEtDay, fmtEtTime, fmtSessionDate } from "@/lib/calendar";
+import { venueOfSymbol } from "@/lib/assets";
+import { fmtSessionDate } from "@/lib/calendar";
+import { fmtDay, fmtTime } from "@/lib/clock";
 import { fmtBps } from "@/lib/format";
+import { VENUES } from "@/lib/venue";
 import {
   TIER_META,
   byLockThenTier,
@@ -132,16 +135,18 @@ export function marketTitle(m: MarketView): string {
   return `${m.symbol} · ${TIER_META[m.tier].label} · ${fmtBps(m.strikeBps)}`;
 }
 
-/** The window the market measures, in New York time. */
+/** The window the market measures, in the venue's time. */
 export function windowLabel(m: MarketView): string {
   if (m.kind === "daily") return fmtSessionDate(m.sessionId);
-  return `${fmtEtTime(m.lockTs)} to ${fmtEtTime(m.settleTs)} ET, ${fmtEtDay(m.lockTs)}`;
+  const venue = venueOfSymbol(m.symbol);
+  return `${fmtTime(m.lockTs, venue)} to ${fmtTime(m.settleTs, venue)} ${VENUES[venue].tz}, ${fmtDay(m.lockTs, venue)}`;
 }
 
 /** The session line on the share card, without the day for hourly markets. */
 export function sessionLabel(m: MarketView): string {
   if (m.kind === "daily") return fmtSessionDate(m.sessionId);
-  return `${fmtEtTime(m.lockTs)} to ${fmtEtTime(m.settleTs)} ET`;
+  const venue = venueOfSymbol(m.symbol);
+  return `${fmtTime(m.lockTs, venue)} to ${fmtTime(m.settleTs, venue)} ${VENUES[venue].tz}`;
 }
 
 /**

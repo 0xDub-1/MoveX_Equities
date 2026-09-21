@@ -6,7 +6,8 @@
 // as being told. This finds the very next moment anything changes state, so
 // one line at the top can say it outright.
 
-import { fmtEtTime } from "./calendar";
+import { venueOfSymbol } from "./assets";
+import { fmtTime } from "./clock";
 import { TIER_META, phaseOf, type MarketView } from "./market";
 
 export interface UpcomingEvent {
@@ -23,7 +24,7 @@ export interface UpcomingEvent {
 
 function nameOf(m: MarketView): string {
   if (m.kind === "hourly") {
-    return `${m.symbol} ${fmtEtTime(m.lockTs)} hour`;
+    return `${m.symbol} ${fmtTime(m.lockTs, venueOfSymbol(m.symbol))} hour`;
   }
   return `${m.symbol} ${TIER_META[m.tier].label}`;
 }

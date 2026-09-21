@@ -10,17 +10,13 @@
 
 import Link from "next/link";
 
-import { fmtEtDay, fmtEtTime, fmtSessionDate } from "@/lib/calendar";
+import { venueOfSymbol } from "@/lib/assets";
+import { fmtSessionDate } from "@/lib/calendar";
+import { fmtDay, fmtTime } from "@/lib/clock";
 import { QUOTE_SYMBOL } from "@/lib/config";
+import { VENUES } from "@/lib/venue";
 import { fmtBps, fmtUsdx } from "@/lib/format";
-import {
-  TIER_META,
-  phaseOf,
-  pot,
-  strikeBand,
-  type MarketView,
-  type PriceFeedView,
-} from "@/lib/market";
+import { phaseOf, pot, strikeBand, type MarketView, type PriceFeedView } from "@/lib/market";
 import { cn } from "@/lib/utils";
 import { SectionHeader, Surface, TierTag } from "@/components/ui/primitives";
 import SideSplit from "@/components/trading/SideSplit";
@@ -75,17 +71,16 @@ function RungCell({
 }
 
 function SlotCell({ market, current, now }: { market: MarketView; current: boolean; now: number }) {
+  const venue = venueOfSymbol(market.symbol);
   const body = (
     <>
       <p className="font-mono text-[11px] font-semibold tabular text-text-1">
-        {fmtEtTime(market.lockTs)} to {fmtEtTime(market.settleTs)}{" "}
-        <span className="font-medium text-text-4">ET</span>
+        {fmtTime(market.lockTs, venue)} to {fmtTime(market.settleTs, venue)}{" "}
+        <span className="font-medium text-text-4">{VENUES[venue].tz}</span>
       </p>
       <div className="mt-2 flex items-center justify-between gap-2">
         <PhaseBadge phase={phaseOf(market, now)} size="sm" />
-        <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-4">
-          {TIER_META[market.tier].label}
-        </span>
+        <span className="font-mono text-[11px] tabular text-text-3">{fmtBps(market.strikeBps)}</span>
       </div>
       <p className="mt-2.5 font-mono text-[11px] tabular text-text-3">
         pot <span className="text-text-1">{fmtUsdx(pot(market), { compact: true })}</span> {QUOTE_SYMBOL}
@@ -134,7 +129,7 @@ export default function LadderSiblings({
         label={daily ? "Ladder" : "Session"}
         trailing={
           <span className="font-mono text-[11.5px] tabular text-text-3">
-            {daily ? fmtSessionDate(market.sessionId) : fmtEtDay(market.lockTs)}
+            {daily ? fmtSessionDate(market.sessionId) : fmtDay(market.lockTs, venueOfSymbol(market.symbol))}
           </span>
         }
       />

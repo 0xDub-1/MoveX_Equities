@@ -3,10 +3,14 @@
 // =============================================================================
 //
 // A daily ladder is three markets that differ only by tier; an hourly session
-// is six markets that differ only by slot. The trading page shows those as
-// one unit each, so the grouping lives here, pure and testable.
+// is the hours of one day that differ only by slot. The trading page shows
+// those as one unit each, so the grouping lives here, pure and testable.
+//
+// Days are the venue's days: an equities session is a New York day, a crypto
+// day runs midnight to midnight UTC.
 
-import { fmtEtDay } from "./calendar";
+import { venueOfSymbol } from "./assets";
+import { fmtDay } from "./clock";
 import {
   ladderId,
   phaseOf,
@@ -15,10 +19,12 @@ import {
   type MarketPhase,
   type MarketView,
 } from "./market";
+import type { Venue } from "./venue";
 
 export interface MarketGroup {
   id: string;
   symbol: string;
+  venue: Venue;
   kind: MarketKind;
   /** The shared session for a daily ladder, the day for an hourly session. */
   sessionId: string;
@@ -33,15 +39,18 @@ export function groupMarkets(markets: MarketView[]): MarketGroup[] {
   const map = new Map<string, MarketGroup>();
 
   for (const m of markets) {
-    const id = m.kind === "daily" ? `daily|${ladderId(m)}` : `hourly|${m.symbol}|${fmtEtDay(m.lockTs)}`;
+    const venue = venueOfSymbol(m.symbol);
+    const day = fmtDay(m.lockTs, venue);
+    const id = m.kind === "daily" ? `daily|${ladderId(m)}` : `hourly|${m.symbol}|${day}`;
     let group = map.get(id);
     if (!group) {
       group = {
         id,
         symbol: m.symbol,
+        venue,
         kind: m.kind,
         sessionId: m.sessionId,
-        dayLabel: fmtEtDay(m.lockTs),
+        dayLabel: day,
         markets: [],
         lockTs: m.lockTs,
         settleTs: m.settleTs,
@@ -89,8 +98,8 @@ export function tabOf(phase: MarketPhase): Tab {
  * What a group currently holds, by tab, in display order.
  *
  * The board filters markets and then groups whatever survives, so a group
- * can hold one hour or all six. This is how its header says which, instead
- * of assuming the group is whole.
+ * can hold one hour or all of them. This is how its header says which,
+ * instead of assuming the group is whole.
  */
 export function groupSummary(group: MarketGroup, nowSec: number): { n: number; label: string }[] {
   const counts: Record<Tab, number> = { open: 0, live: 0, resolved: 0 };

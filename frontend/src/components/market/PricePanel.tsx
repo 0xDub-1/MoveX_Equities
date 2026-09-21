@@ -10,7 +10,8 @@
 
 import type { ReactNode } from "react";
 
-import { fmtEtDateTime } from "@/lib/calendar";
+import { venueOfSymbol } from "@/lib/assets";
+import { fmtDateTime } from "@/lib/clock";
 import { fmtAgo, fmtBps, fmtDistance, fmtPct, fmtPrice } from "@/lib/format";
 import {
   SIDE_META,
@@ -83,7 +84,7 @@ function headline(
         livePrice !== undefined && livePrice > 0n
           ? ` At today's price that is about ${fmtDistance(strikeDistance(livePrice, market.strikeBps))} either way.`
           : "";
-      return `The reference price is recorded at lock, ${fmtEtDateTime(market.lockTs)}. From there ${market.symbol} needs to move more than ${strike}, up or down, for YES to win.${provisional} Until then the band is drawn around the live price.`;
+      return `The reference price is recorded at lock, ${fmtDateTime(market.lockTs, venueOfSymbol(market.symbol))}. From there ${market.symbol} needs to move more than ${strike}, up or down, for YES to win.${provisional} Until then the band is drawn around the live price.`;
     }
     case "live":
     case "awaiting-settle": {
@@ -180,13 +181,13 @@ export default function PricePanel({
           label="Reference price"
           value={hasReference ? fmtPrice(priceToNumber(reference)) : "Set at lock"}
           valueClassName={hasReference ? undefined : "text-text-3"}
-          sub={fmtEtDateTime(market.lockTs)}
+          sub={fmtDateTime(market.lockTs, venueOfSymbol(market.symbol))}
         />
         {settled ? (
           <Cell
             label="Settlement price"
             value={fmtPrice(priceToNumber(market.settlementPrice))}
-            sub={fmtEtDateTime(market.settleTs)}
+            sub={fmtDateTime(market.settleTs, venueOfSymbol(market.symbol))}
           />
         ) : (
           <Cell

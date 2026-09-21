@@ -32,12 +32,12 @@ const spaceGrotesk = Space_Grotesk({
 
 export const metadata: Metadata = {
   title: {
-    default: "MoveX Equities",
-    template: "%s · MoveX Equities",
+    default: "MoveX",
+    template: "%s · MoveX",
   },
   description:
-    "Volatility markets on US equities, settled on Solana. Pick a threshold, pick a side, and let the session play out.",
-  applicationName: "MoveX Equities",
+    "Volatility markets on tokenized US equities and crypto, settled on Solana. Pick a threshold, pick a side, and let the window play out.",
+  applicationName: "MoveX",
 };
 
 export const viewport: Viewport = {

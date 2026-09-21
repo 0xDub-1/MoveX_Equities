@@ -53,20 +53,20 @@ export default function ConnectHero({ faucet }: { faucet: FaucetState | undefine
   return (
     <Surface as="section">
       <div className="mx-auto flex max-w-2xl flex-col items-center gap-5 px-6 py-12 text-center sm:py-16">
-        <Eyebrow>MoveX Equities · Devnet</Eyebrow>
+        <Eyebrow>MoveX · Devnet</Eyebrow>
         <h1 className="font-display text-[28px] font-semibold leading-[1.08] tracking-tight text-text-1 sm:text-[38px]">
-          Volatility markets on US equities, settled on Solana
+          Volatility markets on equities and crypto, settled on Solana
         </h1>
         <p className="max-w-xl text-[13.5px] leading-relaxed text-text-2">
-          Every listed stock carries three thresholds. Each one asks a single question: will it
-          move more than this, in either direction? Pick a threshold, pick a side, and let the
-          session play out. Your balances, positions and claims live in your wallet and are read
+          Every listed asset carries three thresholds. Each one asks a single question: will it
+          move more than this, in either direction? Equities run on the New York session, crypto
+          around the clock in UTC. Pick a threshold, pick a side, and let the window play out. Your balances, positions and claims live in your wallet and are read
           from the chain, so there is nothing to sign up for.
         </p>
         <div className="flex flex-col items-center gap-2.5 sm:flex-row">
           <WalletButton size="lg" />
           <Link
-            href="/trading"
+            href="/equities"
             className="inline-flex h-11 items-center gap-1.5 rounded-md border border-line-2 bg-white/[0.03] px-4 text-[13px] font-semibold text-text-1 transition-colors hover:border-line-3 hover:bg-white/[0.06]"
           >
             Browse markets

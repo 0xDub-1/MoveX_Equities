@@ -1,9 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // The portfolio is the home page. Keep the old address working.
   async redirects() {
-    return [{ source: "/portfolio", destination: "/", permanent: true }];
+    return [
+      // The portfolio is the home page. Keep the old address working.
+      { source: "/portfolio", destination: "/", permanent: true },
+      // The board split into two sections; the old one is the equities board.
+      { source: "/trading", destination: "/equities", permanent: false },
+    ];
   },
 };
 

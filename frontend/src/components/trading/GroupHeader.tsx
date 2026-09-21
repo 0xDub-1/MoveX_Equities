@@ -11,7 +11,7 @@
 
 import type { ReactNode } from "react";
 
-import { TICKER_NAMES, type Ticker } from "@/lib/config";
+import { assetName } from "@/lib/assets";
 import { fmtPrice, fmtUsdx } from "@/lib/format";
 import { priceToNumber, type PriceFeedView } from "@/lib/market";
 import { cn } from "@/lib/utils";
@@ -51,7 +51,7 @@ export default function GroupHeader({
           <span className="font-display text-[22px] font-semibold leading-none tracking-tight text-text-1">
             {symbol}
           </span>
-          <span className="text-[13px] text-text-3">{TICKER_NAMES[symbol as Ticker] ?? ""}</span>
+          <span className="text-[13px] text-text-3">{assetName(symbol) ?? ""}</span>
           {hasPrice && (
             <span className="flex items-center gap-1.5 border-l border-line-2 pl-3">
               <span className="font-mono text-[14px] font-semibold tabular text-text-1">

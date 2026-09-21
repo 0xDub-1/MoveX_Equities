@@ -14,7 +14,9 @@ import Link from "next/link";
 import { PublicKey } from "@solana/web3.js";
 import { ChevronLeft, SearchX } from "lucide-react";
 
+import { venueOfSymbol } from "@/lib/assets";
 import { phaseOf } from "@/lib/market";
+import { VENUES, type Venue } from "@/lib/venue";
 import { useMarket, useMarkets } from "@/hooks/useMarkets";
 import { useNow } from "@/hooks/useNow";
 import { usePriceFeed } from "@/hooks/usePriceFeeds";
@@ -43,26 +45,27 @@ function isAddress(value: string): boolean {
   }
 }
 
-function BackLink() {
+/** Back to the board of the venue this market trades on. */
+function BackLink({ venue = "equities" }: { venue?: Venue }) {
   return (
     <Link
-      href="/trading"
+      href={VENUES[venue].path}
       className="inline-flex items-center gap-1 font-mono text-[11px] uppercase tracking-[0.14em] text-text-3 transition-colors hover:text-text-1"
     >
       <ChevronLeft size={13} />
-      Trading
+      {VENUES[venue].label}
     </Link>
   );
 }
 
-function BackButton() {
+function BackButton({ venue = "equities" }: { venue?: Venue }) {
   return (
     <Link
-      href="/trading"
+      href={VENUES[venue].path}
       className="inline-flex h-10 items-center gap-1.5 rounded-md border border-line-2 bg-white/[0.04] px-4 text-[13px] font-semibold text-text-1 transition-colors hover:border-line-3 hover:bg-white/[0.07]"
     >
       <ChevronLeft size={14} />
-      Back to trading
+      Back to {VENUES[venue].label.toLowerCase()}
     </Link>
   );
 }
@@ -144,10 +147,11 @@ export default function MarketPage({ address }: { address: string }) {
   if (!now) return <PageSkeleton />;
 
   const phase = phaseOf(market, now);
+  const venue = venueOfSymbol(market.symbol);
 
   return (
     <div className={CONTAINER}>
-      <BackLink />
+      <BackLink venue={venue} />
 
       <div className="mt-5">
         <MarketHeader market={market} phase={phase} feed={feed} />

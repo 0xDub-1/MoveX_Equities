@@ -3,39 +3,41 @@
 // =============================================================================
 //
 // Copy and grouping shared by the panels of one market page. Pure functions
-// over MarketView, so every panel says the same thing about the same market.
+// over MarketView, so every panel says the same thing about the same market,
+// in the clock of the venue the market trades on.
 
-import { ET, fmtEtDateTime, fmtEtDay, fmtEtDayLong, fmtEtTime } from "@/lib/calendar";
-import { QUOTE_DECIMALS, TICKER_NAMES, type Ticker } from "@/lib/config";
+import { assetName, venueOfSymbol } from "@/lib/assets";
+import { fmtDateTime, fmtDay, fmtDayLong, fmtTime, fmtWeekday } from "@/lib/clock";
+import { QUOTE_DECIMALS } from "@/lib/config";
 import { fmtBps } from "@/lib/format";
 import { TIER_ORDER, ladderId, type MarketView, type Tier } from "@/lib/market";
+import { VENUES } from "@/lib/venue";
 
 export function companyName(symbol: string): string | undefined {
-  return symbol in TICKER_NAMES ? TICKER_NAMES[symbol as Ticker] : undefined;
-}
-
-const WEEKDAY = new Intl.DateTimeFormat("en-US", { timeZone: ET, weekday: "long" });
-
-/** `Tuesday`, in New York. */
-export function etWeekday(tsSec: number): string {
-  return WEEKDAY.format(new Date(tsSec * 1000));
+  return assetName(symbol);
 }
 
 /** The market's question in plain words. */
 export function questionOf(m: MarketView): string {
+  const venue = venueOfSymbol(m.symbol);
+  const tz = VENUES[venue].tz;
   const head = `Will ${m.symbol} move more than ${fmtBps(m.strikeBps)}`;
   if (m.kind === "daily") {
-    return `${head} between ${etWeekday(m.lockTs)}'s close and ${etWeekday(m.settleTs)}'s close?`;
+    if (venue === "crypto") {
+      return `${head} from midnight ${fmtWeekday(m.lockTs, venue)} to midnight ${fmtWeekday(m.settleTs, venue)}, UTC?`;
+    }
+    return `${head} between ${fmtWeekday(m.lockTs, venue)}'s close and ${fmtWeekday(m.settleTs, venue)}'s close?`;
   }
-  return `${head} between ${fmtEtTime(m.lockTs)} and ${fmtEtTime(m.settleTs)} ET?`;
+  return `${head} between ${fmtTime(m.lockTs, venue)} and ${fmtTime(m.settleTs, venue)} ${tz}?`;
 }
 
-/** The lock and settle window, in New York time. */
+/** The lock and settle window, in the venue's time. */
 export function windowOf(m: MarketView): string {
+  const venue = venueOfSymbol(m.symbol);
   if (m.kind === "daily") {
-    return `Locks ${fmtEtDateTime(m.lockTs)} · Settles ${fmtEtDateTime(m.settleTs)}`;
+    return `Locks ${fmtDateTime(m.lockTs, venue)} · Settles ${fmtDateTime(m.settleTs, venue)}`;
   }
-  return `${fmtEtDayLong(m.lockTs)} · ${fmtEtTime(m.lockTs)} to ${fmtEtTime(m.settleTs)} ET`;
+  return `${fmtDayLong(m.lockTs, venue)} · ${fmtTime(m.lockTs, venue)} to ${fmtTime(m.settleTs, venue)} ${VENUES[venue].tz}`;
 }
 
 function byTier(a: MarketView, b: MarketView): number {
@@ -54,14 +56,16 @@ export function ladderRungs(market: MarketView, all: MarketView[] | undefined): 
 
 /**
  * What the ladder section lists: the rungs for a daily market, and for an
- * hourly one every slot of the same ticker on the same New York day.
+ * hourly one every slot of the same ticker on the same day, where a day is
+ * the venue's day.
  */
 export function siblingsOf(market: MarketView, all: MarketView[] | undefined): MarketView[] {
   if (!all) return [];
   if (market.kind === "daily") return ladderRungs(market, all);
-  const day = fmtEtDay(market.lockTs);
+  const venue = venueOfSymbol(market.symbol);
+  const day = fmtDay(market.lockTs, venue);
   return all
-    .filter((m) => m.symbol === market.symbol && m.kind === "hourly" && fmtEtDay(m.lockTs) === day)
+    .filter((m) => m.symbol === market.symbol && m.kind === "hourly" && fmtDay(m.lockTs, venue) === day)
     .sort((a, b) => a.lockTs - b.lockTs || byTier(a, b));
 }
 

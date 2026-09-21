@@ -4,13 +4,17 @@
 // Trading page
 // =============================================================================
 //
-// The board: every market the program holds, grouped into daily ladders and
+// The board of one venue: every market on it, grouped into daily ladders and
 // hourly sessions and filtered by where it is in its life. All of it is read
 // from chain on a short poll; nothing here comes from a server of ours.
+//
+// Equities and crypto share the board and differ in the clock and the copy.
+// Everything that differs comes from the venue rather than being assumed.
 
 import { useMemo, useState } from "react";
 import { CalendarClock, Layers, RefreshCw } from "lucide-react";
 
+import { assetsOf } from "@/lib/assets";
 import {
   DAILY_POST_MINUTES,
   HOURLY_POST_MINUTES,
@@ -18,12 +22,13 @@ import {
   nextPostTs,
   sessionStatus,
 } from "@/lib/calendar";
-import { TICKERS, type Ticker } from "@/lib/config";
+import { cryptoStatus } from "@/lib/clock";
 import { groupMarkets, tabOf, TAB_META, type MarketGroup, type Tab } from "@/lib/groups";
 import { phaseOf, pot, type MarketKind } from "@/lib/market";
 import { fmtUsdx } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { useMarkets } from "@/hooks/useMarkets";
+import { VENUES, type Venue } from "@/lib/venue";
+import { useVenueMarkets } from "@/hooks/useMarkets";
 import { useNow } from "@/hooks/useNow";
 import { usePriceFeeds } from "@/hooks/usePriceFeeds";
 
@@ -43,20 +48,22 @@ function tabSorter(tab: Tab) {
   };
 }
 
-export default function TradingPage() {
+export default function TradingPage({ venue }: { venue: Venue }) {
+  const meta = VENUES[venue];
+  const assets = useMemo(() => assetsOf(venue), [venue]);
   const now = useNow();
-  const markets = useMarkets();
+  const markets = useVenueMarkets(venue);
   const feeds = usePriceFeeds();
 
   // Null until the visitor picks a tab; before that the board opens on the
   // first tab that has something in it.
   const [chosenTab, setTab] = useState<Tab | null>(null);
-  const [ticker, setTicker] = useState<Ticker | "all">("all");
+  const [ticker, setTicker] = useState<string>("all");
   const [kind, setKind] = useState<KindFilter>("all");
 
   // Every filter applies to markets, never to groups. A group is only the
   // way matching markets are laid out, so a session with one settled hour
-  // shows that hour under Resolved rather than all six.
+  // shows that hour under Resolved rather than all of them.
   const selected = useMemo(() => {
     if (!markets.data) return [];
     return markets.data.filter(
@@ -88,14 +95,19 @@ export default function TradingPage() {
     return { markets: all.length, pot: all.reduce((sum, m) => sum + pot(m), 0n) };
   }, [visible]);
 
-  const status = now ? sessionStatus(new Date(now * 1000)) : null;
+  const status = now
+    ? venue === "equities"
+      ? sessionStatus(new Date(now * 1000))
+      : cryptoStatus(new Date(now * 1000))
+    : null;
   const loading = markets.isLoading && !markets.data;
   const nothingAtAll = !loading && (markets.data?.length ?? 0) === 0;
 
-  // When the board next gains anything. The two kinds are posted at
-  // different hours, so this is whichever comes first.
+  // When the equities board next gains anything. The two kinds are posted at
+  // different hours, so this is whichever comes first. Crypto posts around
+  // the clock and never waits for an evening.
   const postTs = useMemo(() => {
-    if (!now) return null;
+    if (!now || venue !== "equities") return null;
     try {
       const at = new Date(now * 1000);
       return Math.min(nextPostTs(at, DAILY_POST_MINUTES), nextPostTs(at, HOURLY_POST_MINUTES));
@@ -103,7 +115,7 @@ export default function TradingPage() {
       // The calendar does not cover the year ahead.
       return null;
     }
-  }, [now]);
+  }, [now, venue]);
 
   return (
     <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8">
@@ -111,12 +123,9 @@ export default function TradingPage() {
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div className="min-w-0">
           <h1 className="font-display text-[26px] font-semibold leading-none tracking-tight text-text-1 sm:text-[30px]">
-            Markets
+            {meta.label}
           </h1>
-          <p className="mt-2 max-w-2xl text-[13.5px] leading-relaxed text-text-2">
-            Every listed stock carries three thresholds, and each one is its own market with a single
-            question: will it move more than this, in either direction?
-          </p>
+          <p className="mt-2 max-w-2xl text-[13.5px] leading-relaxed text-text-2">{meta.tagline}</p>
         </div>
         {status && (
           <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 font-mono text-[12px] tabular text-text-3">
@@ -135,10 +144,10 @@ export default function TradingPage() {
       {loading ? (
         <Skeleton className="h-11" />
       ) : (
-        <HourlyCountdown markets={markets.data ?? []} now={now} />
+        <HourlyCountdown markets={markets.data ?? []} now={now} venue={venue} />
       )}
 
-      <HowItWorks key={nothingAtAll ? "open" : "closed"} defaultOpen={nothingAtAll} />
+      <HowItWorks key={`${venue}-${nothingAtAll ? "open" : "closed"}`} defaultOpen={nothingAtAll} venue={venue} />
 
       {/* Filters */}
       <div className="flex flex-col gap-3 border-y border-line-1 py-3 lg:flex-row lg:items-center lg:justify-between">
@@ -163,8 +172,8 @@ export default function TradingPage() {
             value={ticker}
             onChange={setTicker}
             options={[
-              { value: "all" as const, label: "All" },
-              ...TICKERS.map((t) => ({ value: t, label: t })),
+              { value: "all", label: "All" },
+              ...assets.map((a) => ({ value: a.symbol, label: a.symbol })),
             ]}
           />
           <SegmentedControl
@@ -229,17 +238,25 @@ export default function TradingPage() {
             icon={<CalendarClock size={18} />}
             title={TAB_META[tab].empty}
             body={
-              <span className="flex flex-col items-center gap-2">
+              venue === "crypto" ? (
                 <span>
-                  The daily ladder is posted at {fmtPostTime(DAILY_POST_MINUTES)} ET and the next
-                  session&apos;s intraday hours at {fmtPostTime(HOURLY_POST_MINUTES)} ET.
+                  Hourly markets are posted four hours ahead and the daily ladder a day ahead, around
+                  the clock. An empty board means the keeper is catching up; it repairs itself within
+                  ten minutes.
                 </span>
-                {postTs && (
-                  <span className="font-mono text-[12px] tabular text-text-2">
-                    Next posting in <Countdown to={postTs} className="text-brand" />
+              ) : (
+                <span className="flex flex-col items-center gap-2">
+                  <span>
+                    The daily ladder is posted at {fmtPostTime(DAILY_POST_MINUTES)} ET and the next
+                    session&apos;s intraday hours at {fmtPostTime(HOURLY_POST_MINUTES)} ET.
                   </span>
-                )}
-              </span>
+                  {postTs && (
+                    <span className="font-mono text-[12px] tabular text-text-2">
+                      Next posting in <Countdown to={postTs} className="text-brand" />
+                    </span>
+                  )}
+                </span>
+              )
             }
           />
         </div>

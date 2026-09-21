@@ -9,7 +9,8 @@
 
 import { Check, X } from "lucide-react";
 
-import { fmtEtDateTime } from "@/lib/calendar";
+import { venueOfSymbol } from "@/lib/assets";
+import { fmtDateTime } from "@/lib/clock";
 import { VOID_GRACE_SECS } from "@/lib/config";
 import type { MarketPhase, MarketView } from "@/lib/market";
 import { cn } from "@/lib/utils";
@@ -41,6 +42,7 @@ function stepsOf(market: MarketView, phase: MarketPhase): Step[] {
   // resolve, and a refund is the only step left.
   const voided = phase === "voided" || phase === "expired";
   const locked = market.referencePrice > 0n;
+  const venue = venueOfSymbol(market.symbol);
 
   const status = (i: number): Status => {
     if (voided) {
@@ -62,7 +64,7 @@ function stepsOf(market: MarketView, phase: MarketPhase): Step[] {
     },
     {
       label: "Lock",
-      time: fmtEtDateTime(market.lockTs),
+      time: fmtDateTime(market.lockTs, venue),
       detail:
         phase === "awaiting-lock"
           ? "waiting for the crank"
@@ -73,7 +75,7 @@ function stepsOf(market: MarketView, phase: MarketPhase): Step[] {
     },
     {
       label: "Settle",
-      time: fmtEtDateTime(market.settleTs),
+      time: fmtDateTime(market.settleTs, venue),
       detail: voided
         ? "did not settle in time"
         : phase === "awaiting-settle"
@@ -84,7 +86,7 @@ function stepsOf(market: MarketView, phase: MarketPhase): Step[] {
     voided
       ? {
           label: "Refund",
-          time: phase === "voided" ? "Open now" : fmtEtDateTime(market.settleTs + VOID_GRACE_SECS),
+          time: phase === "voided" ? "Open now" : fmtDateTime(market.settleTs + VOID_GRACE_SECS, venue),
           detail: "every deposit refunded in full",
           status: status(3),
         }

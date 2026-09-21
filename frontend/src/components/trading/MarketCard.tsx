@@ -11,7 +11,8 @@
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 
-import { fmtEtTime } from "@/lib/calendar";
+import { venueOfSymbol } from "@/lib/assets";
+import { fmtTimeTz } from "@/lib/clock";
 import { fmtBps, fmtMultiple, fmtPct, fmtUsdx } from "@/lib/format";
 import {
   PHASE_META,
@@ -110,7 +111,7 @@ function FooterClock({ market, phase }: { market: MarketView; phase: MarketPhase
         </span>
       );
     case "settled":
-      return <span>Settled {fmtEtTime(market.settleTs)} ET</span>;
+      return <span>Settled {fmtTimeTz(market.settleTs, venueOfSymbol(market.symbol))}</span>;
     case "voided":
       return <span className="text-loss">Refunds open</span>;
   }
@@ -133,7 +134,8 @@ export default function MarketCard({
   const live = phase === "live" || phase === "awaiting-settle";
   const open = phase === "deposits" || phase === "awaiting-lock";
   const cleared = samplesCleared(market);
-  const unit = market.kind === "daily" ? "sessions" : "hours";
+  const unit =
+    market.kind === "hourly" ? "hours" : venueOfSymbol(market.symbol) === "crypto" ? "days" : "sessions";
   const band = strikeBand(market, feed?.price);
 
   return (

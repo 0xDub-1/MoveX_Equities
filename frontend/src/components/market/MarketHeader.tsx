@@ -8,7 +8,8 @@
 // The question is the product, so it gets the display type; the ticker and
 // the tags sit above it as context.
 
-import { fmtEtDateTime } from "@/lib/calendar";
+import { venueOfSymbol } from "@/lib/assets";
+import { fmtDateTime } from "@/lib/clock";
 import { VOID_GRACE_SECS } from "@/lib/config";
 import { fmtBps, fmtDistance } from "@/lib/format";
 import { strikeBand, type MarketPhase, type MarketView, type PriceFeedView } from "@/lib/market";
@@ -48,13 +49,14 @@ function Readout({
 }
 
 function Clock({ market, phase }: { market: MarketView; phase: MarketPhase }) {
+  const venue = venueOfSymbol(market.symbol);
   switch (phase) {
     case "deposits":
       return (
         <Readout
           label="Locks in"
           value={<Countdown to={market.lockTs} />}
-          sub={fmtEtDateTime(market.lockTs)}
+          sub={fmtDateTime(market.lockTs, venue)}
         />
       );
     case "live":
@@ -62,14 +64,14 @@ function Clock({ market, phase }: { market: MarketView; phase: MarketPhase }) {
         <Readout
           label="Settles in"
           value={<Countdown to={market.settleTs} />}
-          sub={fmtEtDateTime(market.settleTs)}
+          sub={fmtDateTime(market.settleTs, venue)}
         />
       );
     case "awaiting-lock":
-      return <Readout label="Lock" value="Awaiting" wide sub={`Due ${fmtEtDateTime(market.lockTs)}`} />;
+      return <Readout label="Lock" value="Awaiting" wide sub={`Due ${fmtDateTime(market.lockTs, venue)}`} />;
     case "awaiting-settle":
       return (
-        <Readout label="Settlement" value="Awaiting" wide sub={`Due ${fmtEtDateTime(market.settleTs)}`} />
+        <Readout label="Settlement" value="Awaiting" wide sub={`Due ${fmtDateTime(market.settleTs, venue)}`} />
       );
     case "settled":
       return (
@@ -82,7 +84,7 @@ function Clock({ market, phase }: { market: MarketView; phase: MarketPhase }) {
             </span>
           }
           wide
-          sub={fmtEtDateTime(market.settleTs)}
+          sub={fmtDateTime(market.settleTs, venue)}
         />
       );
     case "expired":

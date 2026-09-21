@@ -16,7 +16,8 @@
 import { useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
-import { fmtEtDateTime, fmtEtTime } from "@/lib/calendar";
+import { venueOfSymbol } from "@/lib/assets";
+import { fmtDateTime, fmtTimeTz } from "@/lib/clock";
 import { MIN_DEPOSIT_BASE, QUOTE_SYMBOL, SOL_FAUCET_URL, VOID_GRACE_SECS } from "@/lib/config";
 import {
   fmtAgo,
@@ -540,7 +541,7 @@ function LiveBody({
   sentence +=
     phase === "awaiting-settle"
       ? " Settlement is waiting on the crank."
-      : ` The market settles at ${fmtEtTime(market.settleTs)} ET.`;
+      : ` The market settles at ${fmtTimeTz(market.settleTs, venueOfSymbol(market.symbol))}.`;
 
   return (
     <div className="flex flex-col gap-4">
@@ -720,7 +721,7 @@ function ExpiredBody({ market, held }: { market: MarketView; held: Held }) {
         <span className="text-text-3">Refund opens</span>
         <span className="text-right text-text-1">
           <Countdown to={refundAt} done="now" />
-          <span className="text-text-3"> · {fmtEtDateTime(refundAt)}</span>
+          <span className="text-text-3"> · {fmtDateTime(refundAt, venueOfSymbol(market.symbol))}</span>
         </span>
       </div>
     </div>

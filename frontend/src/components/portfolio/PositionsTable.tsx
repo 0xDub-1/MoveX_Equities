@@ -11,6 +11,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { ChevronRight, Coins, History, Layers, RefreshCw, Share2 } from "lucide-react";
 
+import { venueOfSymbol } from "@/lib/assets";
 import { fmtBps, fmtMultiple, fmtUsdx, fmtUsdxSigned } from "@/lib/format";
 import { PHASE_META, payoutMultiple, type MarketView } from "@/lib/market";
 import type { PnlCardData } from "@/lib/pnl-card";
@@ -87,7 +88,7 @@ function MarketCell({ market }: { market: MarketView }) {
         <TierTag tier={market.tier} className="h-5 px-1.5 text-[10.5px]" />
         <span className="font-mono text-[11px] tabular text-text-2">{fmtBps(market.strikeBps)}</span>
         <Eyebrow size="sm" className="text-text-4">
-          {market.kind}
+          {venueOfSymbol(market.symbol)} · {market.kind}
         </Eyebrow>
       </div>
       <span className="font-mono text-[11px] tabular text-text-3">{windowLabel(market)}</span>
@@ -366,7 +367,7 @@ export default function PositionsTable({
         body={empty.body}
         action={
           tab === "active" ? (
-            <LinkButton href="/trading" size="sm" variant="secondary">
+            <LinkButton href="/equities" size="sm" variant="secondary">
               Browse markets
             </LinkButton>
           ) : undefined

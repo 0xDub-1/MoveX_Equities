@@ -6,7 +6,8 @@
 //
 // A daily ladder: one ticker, one session, three thresholds side by side.
 
-import { fmtEtDateTime, fmtEtTime, fmtSessionDate } from "@/lib/calendar";
+import { fmtSessionDate } from "@/lib/calendar";
+import { fmtDateTime, fmtTime } from "@/lib/clock";
 import type { MarketGroup } from "@/lib/groups";
 import { PHASE_META, phaseOf, pot, type PriceFeedView } from "@/lib/market";
 
@@ -27,6 +28,7 @@ export default function LadderGroup({
   const phase = phaseOf(lead, now);
   const meta = PHASE_META[phase];
   const total = group.markets.reduce((sum, m) => sum + pot(m), 0n);
+  const venue = group.venue;
 
   return (
     <section className="animate-fade-up">
@@ -43,8 +45,17 @@ export default function LadderGroup({
         }
         description={
           <>
-            Close to close, from {fmtEtDateTime(group.lockTs)} to {fmtSessionDate(group.sessionId)} at{" "}
-            {fmtEtTime(group.settleTs)} ET.
+            {venue === "crypto" ? (
+              <>
+                Midnight to midnight UTC, from {fmtDateTime(group.lockTs, venue)} to{" "}
+                {fmtDateTime(group.settleTs, venue)}.
+              </>
+            ) : (
+              <>
+                Close to close, from {fmtDateTime(group.lockTs, venue)} to {fmtSessionDate(group.sessionId)} at{" "}
+                {fmtTime(group.settleTs, venue)} ET.
+              </>
+            )}
             {/* Only true when the filters have not taken a rung away. */}
             {group.markets.length === 3 && " Three thresholds, three separate markets."}
           </>

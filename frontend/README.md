@@ -53,10 +53,13 @@ Nothing else needs configuring: there is no database, no server state, and no bu
 | Route | What it shows |
 |---|---|
 | `/` | The portfolio, and the home page. Wallet balances, the USDX faucet, positions with withdraw and claim, realised results, and a shareable result card. Without a wallet, what the product is and how to start. |
-| `/trading` | The board. Daily ladders and hourly sessions, filtered by Open, Live and Resolved. |
+| `/equities` | The equities board, on New York time. Daily ladders and hourly sessions on NVDA, TSLA and SPY, filtered by Open, Live and Resolved. |
+| `/crypto` | The crypto board, in UTC around the clock. Daily ladders on BTC, ETH and SOL and hourly markets on BTC, each hour with its own threshold. |
 | `/market/[address]` | One market. The price against its threshold, the two answers, the 20 samples the threshold came from, the timeline, and the deposit panel. |
 
-`/portfolio` redirects to `/`. `/preview` is a component gallery on fixtures and returns a 404 outside development.
+`/portfolio` redirects to `/` and `/trading` to `/equities`. `/preview` is a component gallery on fixtures and returns a 404 outside development.
+
+Which assets exist, and on which venue, is the registry in `src/lib/assets.ts`; a market on a symbol that is not listed there is never shown. Every time on screen is written in the venue's clock (`src/lib/clock.ts`): New York for equities, UTC for crypto.
 
 ## Layout
 
@@ -69,7 +72,7 @@ src/
     market/       the market page: header, deposit panel, timeline
     portfolio/    wallet, faucet, positions, share card
   hooks/          react-query wrappers over the program's accounts
-  lib/            config, IDL, PDAs, the market model, formatting, calendar
+  lib/            config, IDL, PDAs, the market model, formatting, the asset registry, venues and clocks
   store/          toasts
 ```
 
@@ -78,7 +81,7 @@ src/
 | Data | How |
 |---|---|
 | Markets | `program.account.market.all()`, polled every 15 seconds |
-| Price feeds | The three PriceFeed PDAs, polled every 8 seconds and subscribed over the websocket |
+| Price feeds | The PriceFeed PDA of every listed asset, polled every 8 seconds and subscribed over the websocket |
 | Positions | `program.account.position.all()` filtered by owner, polled every 12 seconds |
 | Balances | `getBalance` and `getTokenAccountBalance` on the wallet's USDX account |
 | Faucet | The Faucet PDA and the wallet's FaucetClaim PDA |

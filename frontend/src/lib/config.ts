@@ -94,18 +94,7 @@ export const VOID_GRACE_SECS = 6 * 60 * 60;
  */
 export const CRANK_GRACE_SECS = 20 * 60;
 
-/** Tickers the keeper publishes prices for, in display order. */
-export const TICKERS = ["NVDA", "TSLA", "SPY"] as const;
-export type Ticker = (typeof TICKERS)[number];
-
-export const TICKER_NAMES: Record<Ticker, string> = {
-  NVDA: "NVIDIA",
-  TSLA: "Tesla",
-  SPY: "S&P 500 ETF",
-};
-
-/** The one ticker that carries intraday hourly markets. */
-export const HOURLY_TICKER: Ticker = "NVDA";
+// Which assets exist, and on which venue, lives in assets.ts.
 
 /** Polling cadences in milliseconds. The publisher writes once a minute. */
 export const POLL_MS = {

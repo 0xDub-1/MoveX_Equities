@@ -4,14 +4,15 @@
 // Hourly session
 // =============================================================================
 //
-// One ticker's intraday session: six one-hour markets against the day's
-// threshold, as rows. A table reads better than six narrow cards because the
-// only thing that differs between the hours is the numbers.
+// One ticker's hours for one day, as rows. A table reads better than a row of
+// narrow cards because the only thing that differs between the hours is the
+// numbers. An equities session is six hours against one threshold; a crypto
+// day is up to twenty-four, each with a threshold of its own.
 
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
-import { fmtEtDayLong, fmtEtTime } from "@/lib/calendar";
+import { fmtDayLong, fmtTime, fmtTimeTz } from "@/lib/clock";
 import { groupSummary, type MarketGroup } from "@/lib/groups";
 import { fmtBps, fmtChance, fmtDistance, fmtMultiple, fmtPct, fmtUsdx } from "@/lib/format";
 import {
@@ -32,7 +33,9 @@ import {
   type PriceFeedView,
   type Side,
 } from "@/lib/market";
+import { strikesVary } from "@/lib/sessions";
 import { cn } from "@/lib/utils";
+import { VENUES, type Venue } from "@/lib/venue";
 
 import { Badge, Countdown } from "@/components/ui/primitives";
 import GroupHeader from "./GroupHeader";
@@ -106,7 +109,7 @@ function Outcome({ market }: { market: MarketView }) {
   );
 }
 
-function Clock({ market, phase }: { market: MarketView; phase: MarketPhase }) {
+function Clock({ market, phase, venue }: { market: MarketView; phase: MarketPhase; venue: Venue }) {
   switch (phase) {
     case "deposits":
       return (
@@ -131,7 +134,7 @@ function Clock({ market, phase }: { market: MarketView; phase: MarketPhase }) {
         </span>
       );
     case "settled":
-      return <span>Settled {fmtEtTime(market.settleTs)} ET</span>;
+      return <span>Settled {fmtTimeTz(market.settleTs, venue)}</span>;
     case "voided":
       return <span className="text-loss">Voided</span>;
   }
@@ -141,10 +144,15 @@ function Row({
   market,
   now,
   feed,
+  venue,
+  showStrike,
 }: {
   market: MarketView;
   now: number;
   feed: PriceFeedView | undefined;
+  venue: Venue;
+  /** Whether this hour's threshold differs from its neighbours', and is worth a line. */
+  showStrike: boolean;
 }) {
   const phase = phaseOf(market, now);
   const meta = PHASE_META[phase];
@@ -167,9 +175,14 @@ function Row({
 
       <div className="flex items-center justify-between gap-3 lg:block">
         <span className="font-mono text-[14px] font-semibold tabular text-text-1">
-          {fmtEtTime(market.lockTs)}
+          {fmtTime(market.lockTs, venue)}
           <span className="font-medium text-text-4"> to </span>
-          {fmtEtTime(market.settleTs)}
+          {fmtTime(market.settleTs, venue)}
+          {showStrike && (
+            <span className="block text-[11px] font-medium text-text-3">
+              more than {fmtBps(market.strikeBps)}
+            </span>
+          )}
         </span>
         <span className="lg:hidden">
           <Badge tone={meta.tone} size="sm" dot={live} pulse={phase === "live"}>
@@ -222,7 +235,7 @@ function Row({
           <span className="text-text-1">{fmtUsdx(pot(market), { compact: true })}</span> USDX
         </span>
         <span className="text-right lg:text-left">
-          <Clock market={market} phase={phase} />
+          <Clock market={market} phase={phase} venue={venue} />
         </span>
         <ChevronRight
           size={15}
@@ -242,6 +255,7 @@ export default function HourlySession({
   now: number;
   feed: PriceFeedView | undefined;
 }) {
+  const venue = group.venue;
   const lead = group.markets[0];
   const live = group.markets.filter((m) => {
     const p = phaseOf(m, now);
@@ -250,11 +264,19 @@ export default function HourlySession({
   const summary = groupSummary(group, now);
   const total = group.markets.reduce((sum, m) => sum + pot(m), 0n);
 
-  // Every hour shares the day's threshold but records its own reference at
-  // its own lock, so the only honest way to put the group in dollars is
-  // against the live price, said as a distance rather than as two strikes.
+  // Equities hours share the day's threshold, read once the evening before.
+  // Crypto hours are each calibrated when they are posted, so a day's rows
+  // differ, and the header says so instead of quoting one of them.
+  const strikes = group.markets.map((m) => m.strikeBps);
+  const varied = strikesVary(strikes);
+  const lowest = Math.min(...strikes);
+  const highest = Math.max(...strikes);
+
+  // Every hour records its own reference at its own lock, so the only honest
+  // way to put the group in dollars is against the live price, said as a
+  // distance rather than as two strikes.
   const perHour =
-    feed && feed.price > 0n ? strikeDistance(feed.price, lead.strikeBps) : null;
+    !varied && feed && feed.price > 0n ? strikeDistance(feed.price, lead.strikeBps) : null;
 
   // The soonest thing this session does next, so the header carries a clock
   // even though its rows are in different states.
@@ -286,23 +308,33 @@ export default function HourlySession({
           ) : undefined
         }
         description={
-          <>
-            {fmtEtDayLong(group.lockTs)}. Will {group.symbol} move more than{" "}
-            <span className="font-mono font-semibold tabular text-text-1">
-              {fmtBps(lead.strikeBps)}
-            </span>{" "}
-            within the hour?{" "}
-            {perHour !== null && (
-              <>
-                That is{" "}
-                <span className="font-mono font-semibold tabular text-text-1">
-                  {fmtDistance(perHour)}
-                </span>{" "}
-                either way from wherever it locks.{" "}
-              </>
-            )}
-            It did in {samplesCleared(lead)} of the last {lead.samplesBps.length} hours.
-          </>
+          varied ? (
+            <>
+              {fmtDayLong(group.lockTs, venue)}, {VENUES[venue].tz}. Each hour carries its own
+              threshold, read from the twenty hours before it was posted:{" "}
+              <span className="font-mono font-semibold tabular text-text-1">{fmtBps(lowest)}</span> to{" "}
+              <span className="font-mono font-semibold tabular text-text-1">{fmtBps(highest)}</span>{" "}
+              across the hours shown.
+            </>
+          ) : (
+            <>
+              {fmtDayLong(group.lockTs, venue)}. Will {group.symbol} move more than{" "}
+              <span className="font-mono font-semibold tabular text-text-1">
+                {fmtBps(lead.strikeBps)}
+              </span>{" "}
+              within the hour?{" "}
+              {perHour !== null && (
+                <>
+                  That is{" "}
+                  <span className="font-mono font-semibold tabular text-text-1">
+                    {fmtDistance(perHour)}
+                  </span>{" "}
+                  either way from wherever it locks.{" "}
+                </>
+              )}
+              It did in {samplesCleared(lead)} of the last {lead.samplesBps.length} hours.
+            </>
+          )
         }
         trailing={
           <>
@@ -331,7 +363,7 @@ export default function HourlySession({
             COLUMNS,
           )}
         >
-          <span>Hour, ET</span>
+          <span>Hour, {VENUES[venue].tz}</span>
           <span>Status</span>
           <span>Yes, moves more</span>
           <span>No, stays within</span>
@@ -341,7 +373,7 @@ export default function HourlySession({
         </div>
         <div className="divide-y divide-line-1">
           {group.markets.map((m) => (
-            <Row key={m.key} market={m} now={now} feed={feed} />
+            <Row key={m.key} market={m} now={now} feed={feed} venue={venue} showStrike={varied} />
           ))}
         </div>
       </div>
