@@ -11,12 +11,19 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PublicKey } from "@solana/web3.js";
 
-import { POLL_MS } from "@/lib/config";
+import { POLL_MS, TICKERS } from "@/lib/config";
 import { byLockThenTier, decodeMarket, type MarketView } from "@/lib/market";
 
 import { useProgram } from "./useProgram";
 
 export const MARKETS_KEY = ["markets"] as const;
+
+/**
+ * The tickers this interface lists. Anyone can create a market on the
+ * program, so a board that showed whatever it found would be a board anyone
+ * could write on; a market on any other symbol is never shown.
+ */
+const LISTED: ReadonlySet<string> = new Set(TICKERS);
 
 export function useMarkets() {
   const { reader } = useProgram();
@@ -25,7 +32,10 @@ export function useMarkets() {
     queryKey: MARKETS_KEY,
     queryFn: async (): Promise<MarketView[]> => {
       const all = await reader.account.market.all();
-      return all.map((a) => decodeMarket(a.publicKey, a.account)).sort(byLockThenTier);
+      return all
+        .map((a) => decodeMarket(a.publicKey, a.account))
+        .filter((m) => LISTED.has(m.symbol))
+        .sort(byLockThenTier);
     },
     refetchInterval: POLL_MS.markets,
   });
@@ -45,7 +55,9 @@ export function useMarket(key: string | undefined) {
     queryFn: async (): Promise<MarketView | null> => {
       const address = new PublicKey(key!);
       const raw = await reader.account.market.fetchNullable(address);
-      return raw ? decodeMarket(address, raw) : null;
+      if (!raw) return null;
+      const market = decodeMarket(address, raw);
+      return LISTED.has(market.symbol) ? market : null;
     },
     initialData: () => {
       const listed = queryClient.getQueryData<MarketView[]>(MARKETS_KEY);
