@@ -23,17 +23,21 @@ import { BarChart3, Coins, Menu, Wallet, X } from "lucide-react";
 import { sessionStatus } from "@/lib/calendar";
 import { cryptoStatus, fmtClock } from "@/lib/clock";
 import { cn } from "@/lib/utils";
-import { VENUES, venueOfPath, type Venue } from "@/lib/venue";
+import { VENUES, isVenueListed, venueOfPath, type Venue } from "@/lib/venue";
 import { useNow } from "@/hooks/useNow";
 import { useVenue } from "@/hooks/useVenue";
 
 import WalletButton from "./WalletButton";
 
-const NAV_ITEMS = [
-  { href: "/", label: "Portfolio", icon: Wallet, venue: null },
-  { href: "/equities", label: "Equities", icon: BarChart3, venue: "equities" as Venue },
-  { href: "/crypto", label: "Crypto", icon: Coins, venue: "crypto" as Venue },
-] as const;
+// A venue this deployment does not list gets no tab. The item stays in the
+// table so listing it again is one edit in venue.ts.
+const NAV_ITEMS = (
+  [
+    { href: "/", label: "Portfolio", icon: Wallet, venue: null },
+    { href: "/equities", label: "Equities", icon: BarChart3, venue: "equities" as Venue },
+    { href: "/crypto", label: "Crypto", icon: Coins, venue: "crypto" as Venue },
+  ] as const
+).filter((item) => item.venue === null || isVenueListed(item.venue));
 
 function isActive(pathname: string, item: (typeof NAV_ITEMS)[number], current: Venue | null): boolean {
   if (item.href === "/") return pathname === "/";

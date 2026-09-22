@@ -11,7 +11,7 @@
 // can create a market on the program, and a board that listed whatever it
 // found would be a board anyone could write on.
 
-import type { Venue } from "./venue";
+import { isVenueListed, type Venue } from "./venue";
 
 export interface AssetInfo {
   /** The on-chain underlying, up to 8 ASCII characters. */
@@ -31,7 +31,14 @@ export const ASSETS: readonly AssetInfo[] = [
   { symbol: "SOL", name: "Solana", venue: "crypto", hourly: false },
 ];
 
-const BY_SYMBOL: ReadonlyMap<string, AssetInfo> = new Map(ASSETS.map((a) => [a.symbol, a]));
+/**
+ * ASSETS is the whole catalogue; this is the part of it this deployment
+ * shows. A market on an unlisted venue is treated exactly like a market on an
+ * unknown symbol: it does not appear anywhere.
+ */
+const LISTED: readonly AssetInfo[] = ASSETS.filter((a) => isVenueListed(a.venue));
+
+const BY_SYMBOL: ReadonlyMap<string, AssetInfo> = new Map(LISTED.map((a) => [a.symbol, a]));
 
 export function assetInfo(symbol: string): AssetInfo | undefined {
   return BY_SYMBOL.get(symbol);
@@ -42,7 +49,7 @@ export function isListed(symbol: string): boolean {
 }
 
 export function assetsOf(venue: Venue): AssetInfo[] {
-  return ASSETS.filter((a) => a.venue === venue);
+  return LISTED.filter((a) => a.venue === venue);
 }
 
 export function symbolsOf(venue: Venue): string[] {
@@ -50,7 +57,7 @@ export function symbolsOf(venue: Venue): string[] {
 }
 
 /** Every listed symbol, in display order. */
-export const ALL_SYMBOLS: readonly string[] = ASSETS.map((a) => a.symbol);
+export const ALL_SYMBOLS: readonly string[] = LISTED.map((a) => a.symbol);
 
 /** The venue a symbol trades on. Equities for anything unknown, which never reaches a page. */
 export function venueOfSymbol(symbol: string): Venue {

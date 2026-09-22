@@ -6,6 +6,7 @@ import Background from "@/components/ui/Background";
 import Footer from "@/components/ui/Footer";
 import Navbar from "@/components/ui/Navbar";
 import { ToastContainer } from "@/components/ui/Toast";
+import { LISTED_BLURB } from "@/lib/venue";
 
 import "./globals.css";
 
@@ -35,8 +36,7 @@ export const metadata: Metadata = {
     default: "MoveX",
     template: "%s · MoveX",
   },
-  description:
-    "Volatility markets on tokenized US equities and crypto, settled on Solana. Pick a threshold, pick a side, and let the window play out.",
+  description: `Volatility markets on ${LISTED_BLURB}, settled on Solana. Pick a threshold, pick a side, and let the window play out.`,
   applicationName: "MoveX",
 };
 

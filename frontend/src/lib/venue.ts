@@ -26,6 +26,10 @@ export interface VenueMeta {
   dayNoun: string;
   /** One line under the board's title. */
   tagline: string;
+  /** What this venue lists, for a sentence that names them all. */
+  blurb: string;
+  /** When it runs, for the same sentence. */
+  clockPhrase: string;
 }
 
 export const VENUES: Record<Venue, VenueMeta> = {
@@ -39,6 +43,8 @@ export const VENUES: Record<Venue, VenueMeta> = {
     nounPlural: "stocks",
     dayNoun: "session",
     tagline: "NVDA, TSLA and SPY on the NYSE session, in New York time.",
+    blurb: "tokenized US equities",
+    clockPhrase: "Equities run on the New York session",
   },
   crypto: {
     id: "crypto",
@@ -50,10 +56,28 @@ export const VENUES: Record<Venue, VenueMeta> = {
     nounPlural: "assets",
     dayNoun: "day",
     tagline: "BTC, ETH and SOL, around the clock, in UTC.",
+    blurb: "crypto",
+    clockPhrase: "crypto runs around the clock in UTC",
   },
 };
 
-export const VENUE_LIST: readonly Venue[] = ["equities", "crypto"];
+/**
+ * The venues this deployment shows. Both are built; only the ones named here
+ * get a tab, a board and a listed asset. This is the one switch: the
+ * navigation, the asset registry and the routes all read it, so opening
+ * crypto to the public is a single line.
+ */
+export const VENUE_LIST: readonly Venue[] = ["equities"];
+
+export function isVenueListed(venue: Venue): boolean {
+  return VENUE_LIST.includes(venue);
+}
+
+/** What this deployment lists, in prose: `tokenized US equities and crypto`. */
+export const LISTED_BLURB = VENUE_LIST.map((v) => VENUES[v].blurb).join(" and ");
+
+/** When each listed venue runs, in prose. */
+export const LISTED_CLOCKS = VENUE_LIST.map((v) => VENUES[v].clockPhrase).join(", ");
 
 /** The venue a route belongs to, or null for pages shared by both. */
 export function venueOfPath(pathname: string): Venue | null {

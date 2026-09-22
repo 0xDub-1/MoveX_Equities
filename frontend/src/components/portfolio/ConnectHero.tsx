@@ -15,6 +15,7 @@ import { ArrowRight } from "lucide-react";
 import { SOL_FAUCET_URL } from "@/lib/config";
 import { fmtDuration, fmtUsdx } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { LISTED_BLURB, LISTED_CLOCKS } from "@/lib/venue";
 import type { FaucetState } from "@/hooks/useFaucet";
 import WalletButton from "@/components/ui/WalletButton";
 import { Eyebrow, InlineLink, Surface } from "@/components/ui/primitives";
@@ -55,13 +56,13 @@ export default function ConnectHero({ faucet }: { faucet: FaucetState | undefine
       <div className="mx-auto flex max-w-2xl flex-col items-center gap-5 px-6 py-12 text-center sm:py-16">
         <Eyebrow>MoveX · Devnet</Eyebrow>
         <h1 className="font-display text-[28px] font-semibold leading-[1.08] tracking-tight text-text-1 sm:text-[38px]">
-          Volatility markets on equities and crypto, settled on Solana
+          Volatility markets on {LISTED_BLURB}, settled on Solana
         </h1>
         <p className="max-w-xl text-[13.5px] leading-relaxed text-text-2">
           Every listed asset carries three thresholds. Each one asks a single question: will it
-          move more than this, in either direction? Equities run on the New York session, crypto
-          around the clock in UTC. Pick a threshold, pick a side, and let the window play out. Your balances, positions and claims live in your wallet and are read
-          from the chain, so there is nothing to sign up for.
+          move more than this, in either direction? {LISTED_CLOCKS}. Pick a threshold, pick a
+          side, and let the window play out. Your balances, positions and claims live in your
+          wallet and are read from the chain, so there is nothing to sign up for.
         </p>
         <div className="flex flex-col items-center gap-2.5 sm:flex-row">
           <WalletButton size="lg" />
