@@ -98,8 +98,15 @@ export function SideChip({
         )}
       >
         <span className="whitespace-nowrap">
-          {state === "winner" ? "paid " : "pays "}
-          <span className={dim ? "text-text-3" : "text-text-1"}>{fmtMultiple(pays)}</span>
+          {/* The losing side never pays, so it quotes no multiple. */}
+          {state === "loser" ? (
+            "no payout"
+          ) : (
+            <>
+              {state === "winner" ? "paid " : "pays "}
+              <span className="text-text-1">{fmtMultiple(pays)}</span>
+            </>
+          )}
         </span>
         {amount !== undefined && (
           <span className="whitespace-nowrap">{fmtUsdx(amount, { compact: true })}</span>

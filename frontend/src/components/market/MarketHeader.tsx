@@ -124,7 +124,8 @@ export default function MarketHeader({
           </h1>
           {name && <span className="text-[14px] text-text-3">{name}</span>}
           <span className="hidden h-4 w-px bg-line-2 sm:block" />
-          <TierTag tier={market.tier} showPercentile />
+          {/* Only the daily ladder has rungs to name. */}
+          {market.kind === "daily" && <TierTag tier={market.tier} showPercentile />}
           <Badge>{market.kind === "daily" ? "Daily" : "Hourly"}</Badge>
           <PhaseBadge phase={phase} />
         </div>

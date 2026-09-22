@@ -72,9 +72,13 @@ export default function MoveGauge({
   const strikePct = strikeBps / 100;
 
   const model = useMemo(() => {
+    // Before lock the band is drawn around the live price, which the caption
+    // says out loud. The move is not: measuring a price against itself gives
+    // 0.00%, and a gauge that prints it declares NO winning on a market that
+    // has not started. No reference, no move, no side.
     const ref = reference > 0n ? reference : (current ?? 0n);
     const refNumber = priceToNumber(ref);
-    const move = ref > 0n && current !== undefined ? signedMovePct(ref, current) : null;
+    const move = reference > 0n && current !== undefined ? signedMovePct(reference, current) : null;
 
     const siblingMax = siblings.reduce((m, s) => Math.max(m, s.strikeBps / 100), 0);
     const half = Math.max(
@@ -87,7 +91,7 @@ export default function MoveGauge({
     const leading: Side | null =
       state === "settled"
         ? (winningSide ?? null)
-        : move !== null && ref > 0n
+        : move !== null
           ? Math.abs(move) > strikePct
             ? "above"
             : "below"
@@ -112,19 +116,25 @@ export default function MoveGauge({
     };
   }, [reference, current, strikeBps, strikePct, siblings, state, winningSide]);
 
-  const hasReference = model.ref > 0n;
+  const hasPrice = model.ref > 0n;
   const resolved = state === "settled" || state === "voided";
   const yesLeads = model.leading === "above";
   const noLeads = model.leading === "below";
   const tone = yesLeads ? "above" : noLeads ? "below" : "neutral";
   const strikeLabel = fmtPct(strikePct);
 
-  const zone = (title: string, side: Side, x: number, active: boolean) => (
+  // Three captions sized for a desktop track collide at 390px. On a phone
+  // each keeps the word and drops the number, which the axis under the track
+  // prints anyway.
+  const zone = (short: string, long: string, side: Side, x: number, active: boolean) => (
     <div
-      className="absolute -translate-x-1/2 text-center whitespace-nowrap"
+      className="absolute -translate-x-1/2 whitespace-nowrap text-center"
       style={{ left: `${x}%` }}
     >
-      <p className={cn("text-[12px] font-medium", active ? "text-text-1" : "text-text-3")}>{title}</p>
+      <p className={cn("text-[12px] font-medium", active ? "text-text-1" : "text-text-3")}>
+        <span className="sm:hidden">{short}</span>
+        <span className="hidden sm:inline">{long}</span>
+      </p>
       <p
         className={cn(
           "mt-0.5 font-mono text-[11px] font-semibold tracking-[0.08em]",
@@ -140,14 +150,14 @@ export default function MoveGauge({
     <div className={cn("relative select-none", className)}>
       {/* Zones, in words */}
       <div className="relative h-10">
-        {zone(`Falls more than ${strikeLabel}`, "above", (PAD + model.xL) / 2, yesLeads)}
-        {zone(`Stays within ${strikeLabel}`, "below", 50, noLeads)}
-        {zone(`Rises more than ${strikeLabel}`, "above", (model.xR + 100 - PAD) / 2, yesLeads)}
+        {zone("Falls", `Falls more than ${strikeLabel}`, "above", (PAD + model.xL) / 2, yesLeads)}
+        {zone("Within", `Stays within ${strikeLabel}`, "below", 50, noLeads)}
+        {zone("Rises", `Rises more than ${strikeLabel}`, "above", (model.xR + 100 - PAD) / 2, yesLeads)}
       </div>
 
       {/* Marker label */}
       <div className="relative mt-3 h-12">
-        {hasReference && model.currentNumber !== null && (
+        {hasPrice && model.currentNumber !== null && (
           <motion.div
             className="absolute bottom-0 -translate-x-1/2 flex flex-col items-center"
             initial={false}
@@ -264,7 +274,7 @@ export default function MoveGauge({
         />
 
         {/* Needle */}
-        {hasReference && model.currentNumber !== null && (
+        {hasPrice && model.currentNumber !== null && (
           <motion.div
             className="absolute -top-2 -bottom-2 -translate-x-1/2 flex flex-col items-center justify-center"
             initial={false}
@@ -298,7 +308,7 @@ export default function MoveGauge({
             {fmtPct(-strikePct, { signed: true })}
           </p>
           <p className="font-mono text-[11.5px] tabular text-text-3">
-            {hasReference ? fmtPrice(model.lower) : "--"}
+            {hasPrice ? fmtPrice(model.lower) : "--"}
           </p>
         </div>
         <div className="absolute left-1/2 -translate-x-1/2 text-center">
@@ -306,7 +316,7 @@ export default function MoveGauge({
             {provisional ? "Live price" : "Reference"}
           </p>
           <p className="font-mono text-[12.5px] font-semibold tabular text-text-1">
-            {hasReference ? fmtPrice(model.refNumber) : "Set at lock"}
+            {hasPrice ? fmtPrice(model.refNumber) : "Set at lock"}
           </p>
         </div>
         <div className="absolute -translate-x-1/2 text-center" style={{ left: `${model.xR}%` }}>
@@ -314,7 +324,7 @@ export default function MoveGauge({
             {fmtPct(strikePct, { signed: true })}
           </p>
           <p className="font-mono text-[11.5px] tabular text-text-3">
-            {hasReference ? fmtPrice(model.upper) : "--"}
+            {hasPrice ? fmtPrice(model.upper) : "--"}
           </p>
         </div>
       </div>

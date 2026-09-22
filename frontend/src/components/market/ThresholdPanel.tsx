@@ -7,6 +7,8 @@
 // The twenty samples the strike was read from, and the sentence that turns a
 // percentile into a base rate. Shown rather than asserted.
 
+import { venueOfSymbol } from "@/lib/assets";
+import { sampleUnit } from "@/lib/board";
 import { fmtBps } from "@/lib/format";
 import { TIER_META, type MarketView } from "@/lib/market";
 import { SectionHeader, Surface, TierTag } from "@/components/ui/primitives";
@@ -24,8 +26,11 @@ export default function ThresholdPanel({
 }) {
   const meta = TIER_META[market.tier];
   const daily = market.kind === "daily";
-  const span = daily ? "close-to-close" : "one-hour";
-  const unit = daily ? "sessions" : "hours";
+  // The nouns come from the venue, not from the instrument. Bitcoin has no
+  // close and no session, and the card that linked here already said "days".
+  const venue = venueOfSymbol(market.symbol);
+  const span = daily ? (venue === "crypto" ? "midnight to midnight" : "close to close") : "one hour";
+  const unit = sampleUnit(market);
   const count = market.samplesBps.length;
 
   return (
@@ -41,18 +46,21 @@ export default function ThresholdPanel({
           siblings={rungs}
           height={120}
           unit={unit}
+          label={daily ? undefined : "THRESHOLD"}
         />
 
         <div className="flex flex-col gap-3 text-[12.5px] leading-relaxed text-text-2">
           <div className="flex items-center gap-2">
-            <TierTag tier={market.tier} showPercentile />
+            {/* TIGHT, FAIR and WIDE are rungs of the daily ladder. An hourly
+                market has one threshold and no ladder to sit on. */}
+            {daily && <TierTag tier={market.tier} showPercentile />}
             <span className="font-mono text-[12px] font-semibold tabular text-text-1">
               {fmtBps(market.strikeBps)}
             </span>
           </div>
           <p>
-            {meta.label} is the {PERCENTILE_ORDINAL[market.tier]} percentile of the last {count} {span}{" "}
-            moves. Historically about {meta.baseRate}% of {unit} exceeded it.
+            {daily ? meta.label : "The threshold"} is the {PERCENTILE_ORDINAL[market.tier]} percentile of
+            the last {count} {span} moves. The chart counts how many of them cleared it.
           </p>
           <p className="text-text-3">
             The program recomputed this percentile from the {count} samples stored on chain and

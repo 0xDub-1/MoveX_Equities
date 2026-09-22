@@ -263,6 +263,18 @@ export function decodePriceFeed(address: PublicKey, raw: RawPriceFeed): PriceFee
 
 export const TIERS: readonly Tier[] = ["tight", "fair", "wide"];
 
+/**
+ * The top of a samples chart. Capped just above the bulk of the distribution
+ * rather than at its tallest bar, because one outlying move would otherwise
+ * flatten the other nineteen and bury the threshold line at the floor. Bars
+ * past the cap simply reach the top, which is what they mean anyway.
+ */
+export function sampleScale(samplesBps: readonly number[], strikeBps: number): number {
+  const ranked = [...samplesBps].sort((a, b) => a - b);
+  const p85 = ranked[Math.max(0, Math.ceil(ranked.length * 0.85) - 1)] ?? 0;
+  return Math.max(p85, strikeBps * 1.4, 1) * 1.1;
+}
+
 export const TIER_META: Record<
   Tier,
   {

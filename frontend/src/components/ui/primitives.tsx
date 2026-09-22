@@ -14,8 +14,8 @@ import { ExternalLink, Loader2 } from "lucide-react";
 
 import { explorerAddress } from "@/lib/config";
 import { fmtCountdown, shortKey } from "@/lib/format";
-import type { Side, Tier, Tone } from "@/lib/market";
-import { SIDE_META, TIER_META } from "@/lib/market";
+import type { MarketPhase, Side, Tier, Tone } from "@/lib/market";
+import { PHASE_META, SIDE_META, TIER_META } from "@/lib/market";
 import { cn } from "@/lib/utils";
 import { useNow } from "@/hooks/useNow";
 
@@ -150,6 +150,17 @@ export function Badge({
       )}
       {children}
     </span>
+  );
+}
+
+/** A market's phase as a badge: tone from PHASE_META, a pulsing dot while live. */
+export function PhaseBadge({ phase, size = "md" }: { phase: MarketPhase; size?: "sm" | "md" }) {
+  const meta = PHASE_META[phase];
+  const live = phase === "live";
+  return (
+    <Badge tone={meta.tone} dot={live} pulse={live} size={size}>
+      {meta.label}
+    </Badge>
   );
 }
 
@@ -358,17 +369,21 @@ export function SegmentedControl<T extends string>({
   onChange,
   size = "md",
   className,
+  grow = false,
 }: {
-  options: { value: T; label: ReactNode; count?: number }[];
+  options: { value: T; label: ReactNode; count?: number; title?: string; disabled?: boolean }[];
   value: T;
   onChange: (value: T) => void;
   size?: "sm" | "md";
   className?: string;
+  /** Segments share the width equally, for a control that spans a phone. */
+  grow?: boolean;
 }) {
   return (
     <div
       className={cn(
         "inline-flex items-center rounded-md border border-line-1 bg-surface-0/60 p-0.5 gap-0.5",
+        grow && "flex w-full",
         className,
       )}
       role="tablist"
@@ -381,11 +396,15 @@ export function SegmentedControl<T extends string>({
             type="button"
             role="tab"
             aria-selected={active}
+            disabled={o.disabled}
+            title={o.title}
             onClick={() => onChange(o.value)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded font-medium transition-colors whitespace-nowrap",
+              "inline-flex items-center justify-center gap-1.5 rounded font-medium transition-colors whitespace-nowrap",
               size === "sm" ? "h-7 px-2.5 text-[11.5px]" : "h-8 px-3 text-[12.5px]",
-              active ? "bg-white/[0.08] text-text-1" : "text-text-3 hover:text-text-1",
+              grow && "flex-1",
+              active ? "bg-white/[0.08] text-text-1" : "text-text-3",
+              o.disabled ? "cursor-default text-text-4/60" : !active && "hover:text-text-1",
             )}
           >
             {o.label}
@@ -399,6 +418,69 @@ export function SegmentedControl<T extends string>({
                 {o.count}
               </span>
             )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Underlined tabs for the top-level choice on a page. Each tab carries a
+ * label, an optional caption under it, a count chip and a pulsing dot for
+ * "something is live in here", so the inactive tab still says what it holds.
+ */
+export function TabBar<T extends string>({
+  tabs,
+  value,
+  onChange,
+  className,
+}: {
+  tabs: { value: T; label: string; caption?: string; count?: number; live?: boolean }[];
+  value: T;
+  onChange: (value: T) => void;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex items-stretch border-b border-line-2", className)} role="tablist">
+      {tabs.map((t) => {
+        const active = t.value === value;
+        return (
+          <button
+            key={t.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(t.value)}
+            className={cn(
+              "relative flex min-w-0 flex-1 flex-col items-start gap-0.5 px-1 pb-3 pt-2.5 text-left transition-colors sm:flex-none sm:pr-8",
+              active ? "text-text-1" : "text-text-3 hover:text-text-2",
+            )}
+          >
+            <span className="flex items-center gap-2">
+              <span className="font-display text-[15px] font-semibold leading-none tracking-tight">{t.label}</span>
+              {typeof t.count === "number" && (
+                <span
+                  className={cn(
+                    "rounded-sm border px-1.5 py-px font-mono text-[10.5px] tabular leading-none",
+                    active ? "border-line-3 text-text-1" : "border-line-1 text-text-4",
+                  )}
+                >
+                  {t.count}
+                </span>
+              )}
+              {t.live && <span className="h-1.5 w-1.5 rounded-full bg-below animate-pulse-soft" title="A market is live here" />}
+            </span>
+            {t.caption && (
+              <span className="hidden text-[12px] leading-snug text-text-4 sm:block">{t.caption}</span>
+            )}
+            <span
+              className={cn(
+                "absolute inset-x-0 -bottom-px h-px transition-colors",
+                active ? "bg-brand" : "bg-transparent",
+              )}
+              aria-hidden
+            />
           </button>
         );
       })}

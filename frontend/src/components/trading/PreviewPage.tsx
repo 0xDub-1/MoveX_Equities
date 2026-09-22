@@ -1,20 +1,25 @@
 "use client";
 
-// Development-only gallery of the trading components on fixture data, so
-// every phase can be looked at before the keeper has posted a market.
+// Development-only gallery of the board on fixture data, so every phase of
+// both instruments on both venues can be looked at before the keeper has
+// posted a market.
 
 import { useMemo } from "react";
 
+import { venueOfSymbol } from "@/lib/assets";
+import { stageOf, type Stage } from "@/lib/board";
 import { fixtureFeeds, fixtureMarkets } from "@/lib/fixtures";
-import { groupMarkets } from "@/lib/groups";
+import type { MarketKind } from "@/lib/market";
 import { useNow } from "@/hooks/useNow";
 
-import { SectionHeader, Surface } from "@/components/ui/primitives";
-import HourlySession from "./HourlySession";
-import LadderGroup from "./LadderGroup";
+import { Eyebrow, SectionHeader, Surface } from "@/components/ui/primitives";
+import AssetGroup from "./AssetGroup";
 import MoveGauge from "./MoveGauge";
 import SamplesHistogram from "./SamplesHistogram";
 import SideSplit from "./SideSplit";
+
+const STAGES: Stage[] = ["open", "live", "resolved"];
+const KINDS: MarketKind[] = ["hourly", "daily"];
 
 export default function PreviewPage() {
   const now = useNow();
@@ -23,22 +28,21 @@ export default function PreviewPage() {
   const base = Math.floor(now / 600) * 600;
   const markets = useMemo(() => fixtureMarkets(base), [base]);
   const feeds = useMemo(() => fixtureFeeds(base), [base]);
-  const groups = useMemo(() => groupMarkets(markets), [markets]);
 
   if (!now) return null;
 
   const tslaFair = markets.find((m) => m.symbol === "TSLA" && m.tier === "fair")!;
-  const nvdaFair = markets.find(
-    (m) => m.symbol === "NVDA" && m.tier === "fair" && m.kind === "daily",
-  )!;
+  const nvdaFair = markets.find((m) => m.symbol === "NVDA" && m.tier === "fair" && m.kind === "daily")!;
   const spyFair = markets.find((m) => m.symbol === "SPY" && m.tier === "fair")!;
   const siblings = (symbol: string) =>
     markets
       .filter((m) => m.symbol === symbol && m.kind === "daily")
       .map((m) => ({ tier: m.tier, strikeBps: m.strikeBps }));
 
+  const symbols = [...new Set(markets.map((m) => m.symbol))];
+
   return (
-    <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-8 px-4 py-6 sm:px-6">
+    <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-10 px-4 py-6 sm:px-6">
       <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-warning">
         Preview on fixtures. Development only.
       </p>
@@ -99,12 +103,40 @@ export default function PreviewPage() {
         </Surface>
       </div>
 
-      {groups.map((g) =>
-        g.kind === "daily" ? (
-          <LadderGroup key={g.id} group={g} now={now} feed={feeds[g.symbol]} />
-        ) : (
-          <HourlySession key={g.id} group={g} now={now} feed={feeds[g.symbol]} />
-        ),
+      {KINDS.map((kind) =>
+        STAGES.map((stage) => {
+          const groups = symbols
+            .map((symbol) => {
+              const all = markets.filter((m) => m.symbol === symbol && m.kind === kind);
+              const shown = all.filter((m) => stageOf(m, now) === stage);
+              return { symbol, all, shown };
+            })
+            .filter((g) => g.shown.length > 0);
+          if (groups.length === 0) return null;
+          return (
+            <section key={`${kind}-${stage}`} className="flex flex-col gap-8">
+              <Eyebrow>
+                {kind} · {stage}
+              </Eyebrow>
+              {groups.map((g) => (
+                <AssetGroup
+                  key={`${kind}-${stage}-${g.symbol}`}
+                  symbol={g.symbol}
+                  kind={kind}
+                  all={g.all}
+                  shown={g.shown}
+                  stage={stage}
+                  now={now}
+                  feed={feeds[g.symbol]}
+                  onStage={() => undefined}
+                />
+              ))}
+              <p className="font-mono text-[10.5px] text-text-4">
+                {groups.map((g) => `${g.symbol} ${venueOfSymbol(g.symbol)}`).join(" · ")}
+              </p>
+            </section>
+          );
+        }),
       )}
     </div>
   );

@@ -38,8 +38,7 @@ export const VENUES: Record<Venue, VenueMeta> = {
     noun: "stock",
     nounPlural: "stocks",
     dayNoun: "session",
-    tagline:
-      "Every listed stock carries three thresholds, and each one is its own market with a single question: will it move more than this, in either direction, close to close?",
+    tagline: "NVDA, TSLA and SPY on the NYSE session, in New York time.",
   },
   crypto: {
     id: "crypto",
@@ -50,8 +49,7 @@ export const VENUES: Record<Venue, VenueMeta> = {
     noun: "asset",
     nounPlural: "assets",
     dayNoun: "day",
-    tagline:
-      "Around the clock, in UTC. Daily ladders lock at midnight and hourly markets lock on the hour, each with its own threshold read from the last twenty moves.",
+    tagline: "BTC, ETH and SOL, around the clock, in UTC.",
   },
 };
 

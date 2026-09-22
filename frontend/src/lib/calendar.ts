@@ -188,6 +188,9 @@ export const HALF_DAY_CLOSE_MINUTES = 13 * 60;
  * in the evening, for the next session, because their ladder is calibrated
  * on completed hours and at 15:55 the session's last hour is still running.
  */
+/** The first hourly market of a session locks at 10:00 ET, not at the open. */
+export const HOURLY_FIRST_LOCK_MINUTES = 10 * 60;
+
 export const HOURLY_POST_MINUTES = 20 * 60;
 export const DAILY_POST_MINUTES = 15 * 60 + 55;
 

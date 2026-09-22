@@ -5,26 +5,32 @@
 // =============================================================================
 //
 // The other markets this one belongs with. A daily market sits on a ladder
-// of three thresholds for the same session; an hourly one sits in a row of
-// slots across the trading day. Each cell is a link, the current one is not.
+// of three thresholds for the same session; an hourly one sits among the
+// hours of the same day. Every cell has the anatomy of a board card in
+// miniature: the slot, the question, the two prices, the two answers. Each
+// cell is a link, the current one is not.
 
 import Link from "next/link";
 
 import { venueOfSymbol } from "@/lib/assets";
+import { slotLabel } from "@/lib/board";
 import { fmtSessionDate } from "@/lib/calendar";
-import { fmtDay, fmtTime } from "@/lib/clock";
-import { QUOTE_SYMBOL } from "@/lib/config";
-import { VENUES } from "@/lib/venue";
-import { fmtBps, fmtUsdx } from "@/lib/format";
-import { phaseOf, pot, strikeBand, type MarketView, type PriceFeedView } from "@/lib/market";
+import { fmtDay } from "@/lib/clock";
+import { fmtBps, fmtPct, fmtPrice } from "@/lib/format";
+import {
+  phaseOf,
+  priceToNumber,
+  signedMovePct,
+  strikeBand,
+  type MarketView,
+  type PriceFeedView,
+} from "@/lib/market";
 import { cn } from "@/lib/utils";
-import { SectionHeader, Surface, TierTag } from "@/components/ui/primitives";
+import { PhaseBadge, SectionHeader, Surface } from "@/components/ui/primitives";
 import SideSplit from "@/components/trading/SideSplit";
 import StrikeRail from "@/components/trading/StrikeRail";
 
-import PhaseBadge from "./PhaseBadge";
-
-function RungCell({
+function SiblingCell({
   market,
   current,
   now,
@@ -35,63 +41,48 @@ function RungCell({
   now: number;
   feed: PriceFeedView | undefined;
 }) {
-  // The three rungs share a session, so the rail is what separates them:
-  // same reference price, three different pairs of strikes.
+  const label = slotLabel(market);
   const band = strikeBand(market, feed?.price);
+  const settled = market.state === "settled" && market.referencePrice > 0n && market.settlementPrice > 0n;
   const body = (
     <>
       {current && <span className="absolute inset-x-0 top-0 h-px bg-brand/60" aria-hidden />}
-      <div className="flex items-center justify-between gap-2">
-        <TierTag tier={market.tier} active={current} />
+      <div className="flex items-start justify-between gap-2">
+        <span className="min-w-0 truncate font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-text-3">
+          {label.main}
+          <span className="text-text-4"> · {label.aside}</span>
+        </span>
         <PhaseBadge phase={phaseOf(market, now)} size="sm" />
       </div>
-      <p className="mt-3 text-[13.5px] font-semibold text-text-1">
+      <p className="mt-2.5 text-[13.5px] font-semibold text-text-1">
         More than <span className="font-mono tabular">{fmtBps(market.strikeBps)}</span>?
       </p>
-      {band && <StrikeRail band={band} className="mt-2.5" />}
-      <SideSplit market={market} size="sm" amounts={false} className="mt-3" />
+      {/* Once a market has paid out, where the price ended is the fact; the
+          band it was measured against is on the card it came from. */}
+      {settled ? (
+        <p className="mt-2.5 flex min-h-[27px] items-center font-mono text-[11.5px] tabular text-text-2">
+          <span className={cn("font-semibold", market.winningSide === "above" ? "text-above" : "text-below")}>
+            {fmtPct(signedMovePct(market.referencePrice, market.settlementPrice), { signed: true })}
+          </span>
+          <span className="text-text-4">&nbsp;·&nbsp;</span>
+          ended at {fmtPrice(priceToNumber(market.settlementPrice))}
+        </p>
+      ) : (
+        <StrikeRail band={band} className="mt-2.5" />
+      )}
+      {/* A settled sibling names its winner, the same way a board card does. */}
+      <SideSplit
+        market={market}
+        size="sm"
+        amounts={false}
+        highlight={market.state === "settled" ? market.winningSide : undefined}
+        className="mt-3"
+      />
     </>
   );
   const classes = cn(
-    "relative block min-w-0 px-4 py-4",
+    "relative block min-w-0 border-b border-r border-line-1 px-4 py-4",
     current ? "bg-white/[0.035]" : "bg-surface-1 transition-colors hover:bg-white/[0.04]",
-  );
-  if (current) {
-    return (
-      <div className={classes} aria-current="page">
-        {body}
-      </div>
-    );
-  }
-  return (
-    <Link href={`/market/${market.key}`} className={classes}>
-      {body}
-    </Link>
-  );
-}
-
-function SlotCell({ market, current, now }: { market: MarketView; current: boolean; now: number }) {
-  const venue = venueOfSymbol(market.symbol);
-  const body = (
-    <>
-      <p className="font-mono text-[11px] font-semibold tabular text-text-1">
-        {fmtTime(market.lockTs, venue)} to {fmtTime(market.settleTs, venue)}{" "}
-        <span className="font-medium text-text-4">{VENUES[venue].tz}</span>
-      </p>
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <PhaseBadge phase={phaseOf(market, now)} size="sm" />
-        <span className="font-mono text-[11px] tabular text-text-3">{fmtBps(market.strikeBps)}</span>
-      </div>
-      <p className="mt-2.5 font-mono text-[11px] tabular text-text-3">
-        pot <span className="text-text-1">{fmtUsdx(pot(market), { compact: true })}</span> {QUOTE_SYMBOL}
-      </p>
-    </>
-  );
-  const classes = cn(
-    "block w-[164px] shrink-0 rounded-md border px-3 py-3",
-    current
-      ? "border-line-3 bg-white/[0.04]"
-      : "border-line-1 bg-surface-1 transition-colors hover:border-line-2 hover:bg-white/[0.04]",
   );
   if (current) {
     return (
@@ -133,20 +124,21 @@ export default function LadderSiblings({
           </span>
         }
       />
-
-      {daily ? (
-        <div className="grid grid-cols-1 gap-px bg-line-1 sm:grid-cols-3">
+      {/* The hairlines belong to the cells, not to the container: a row that
+          does not fill its columns would otherwise leave a block of divider
+          colour where the missing cells would have been. */}
+      <div className="overflow-hidden">
+        <div
+          className={cn(
+            "-mb-px -mr-px grid",
+            daily ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3",
+          )}
+        >
           {siblings.map((m) => (
-            <RungCell key={m.key} market={m} current={m.key === market.key} now={now} feed={feed} />
+            <SiblingCell key={m.key} market={m} current={m.key === market.key} now={now} feed={feed} />
           ))}
         </div>
-      ) : (
-        <div className="flex gap-2 overflow-x-auto px-4 sm:px-5 py-4">
-          {siblings.map((m) => (
-            <SlotCell key={m.key} market={m} current={m.key === market.key} now={now} />
-          ))}
-        </div>
-      )}
+      </div>
     </Surface>
   );
 }

@@ -10,6 +10,7 @@
 // inside a card, and it carries the whole justification for the number.
 
 import { fmtBps } from "@/lib/format";
+import { sampleScale } from "@/lib/market";
 import { cn } from "@/lib/utils";
 
 export default function SamplesSpark({
@@ -23,10 +24,10 @@ export default function SamplesSpark({
   className?: string;
   height?: number;
 }) {
-  // The tallest sample sets the scale, with headroom so the top bar and the
-  // threshold line never touch the edge.
-  const max = Math.max(...samplesBps, strikeBps) * 1.12 || 1;
-  const line = (strikeBps / max) * 100;
+  // Shared with the market page's histogram, so one click never redraws the
+  // same twenty numbers to a different scale.
+  const max = sampleScale(samplesBps, strikeBps);
+  const line = Math.min(100, (strikeBps / max) * 100);
 
   return (
     <div
@@ -44,7 +45,7 @@ export default function SamplesSpark({
               "min-w-0 flex-1 rounded-t-[1px]",
               cleared ? "bg-above/80" : "bg-below/45",
             )}
-            style={{ height: `${Math.max(8, (s / max) * 100)}%` }}
+            style={{ height: `${Math.min(100, Math.max(7, (s / max) * 100))}%` }}
           />
         );
       })}

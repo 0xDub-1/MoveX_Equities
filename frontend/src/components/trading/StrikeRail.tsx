@@ -36,9 +36,23 @@ function End({
   );
 }
 
-export default function StrikeRail({ band, className }: { band: StrikeBand; className?: string }) {
+/** The rail's own height, so the row it sits in is level with or without prices. */
+const RAIL_HEIGHT = 27;
+
+export default function StrikeRail({ band, className }: { band: StrikeBand | null; className?: string }) {
+  // No band means no price has been printed yet. The row still takes its
+  // height, because a card beside it in the same grid row has one.
+  if (!band) {
+    return (
+      <div className={cn("flex items-center", className)} style={{ minHeight: RAIL_HEIGHT }}>
+        <p className="font-mono text-[11px] text-text-4">Prices arrive with the next print</p>
+      </div>
+    );
+  }
+
   return (
     <div
+      style={{ minHeight: RAIL_HEIGHT }}
       className={cn("@container flex items-start justify-between gap-2", className)}
       title={
         band.provisional

@@ -3,11 +3,13 @@
 // =============================================================================
 //
 // A daily ladder is three markets that differ only by tier; an hourly session
-// is the hours of one day that differ only by slot. The trading page shows
-// those as one unit each, so the grouping lives here, pure and testable.
+// is one asset's hours in time order. The trading page shows those as one
+// unit each, so the grouping lives here, pure and testable.
 //
-// Days are the venue's days: an equities session is a New York day, a crypto
-// day runs midnight to midnight UTC.
+// Hours are not split by day. Crypto hours run around the clock and the four
+// posted ahead cross midnight every evening; a group per day would put one
+// asset's hours in two places on the board with the daily ladders between
+// them. Each card says which day it is on.
 
 import { venueOfSymbol } from "./assets";
 import { fmtDay } from "./clock";
@@ -26,8 +28,9 @@ export interface MarketGroup {
   symbol: string;
   venue: Venue;
   kind: MarketKind;
-  /** The shared session for a daily ladder, the day for an hourly session. */
+  /** The shared session for a daily ladder, the earliest hour for a session. */
   sessionId: string;
+  /** The day of the earliest market, in the venue's zone. */
   dayLabel: string;
   markets: MarketView[];
   /** Earliest lock and latest settle across the group. */
@@ -41,7 +44,7 @@ export function groupMarkets(markets: MarketView[]): MarketGroup[] {
   for (const m of markets) {
     const venue = venueOfSymbol(m.symbol);
     const day = fmtDay(m.lockTs, venue);
-    const id = m.kind === "daily" ? `daily|${ladderId(m)}` : `hourly|${m.symbol}|${day}`;
+    const id = m.kind === "daily" ? `daily|${ladderId(m)}` : `hourly|${m.symbol}`;
     let group = map.get(id);
     if (!group) {
       group = {
@@ -58,7 +61,11 @@ export function groupMarkets(markets: MarketView[]): MarketGroup[] {
       map.set(id, group);
     }
     group.markets.push(m);
-    group.lockTs = Math.min(group.lockTs, m.lockTs);
+    if (m.lockTs < group.lockTs) {
+      group.lockTs = m.lockTs;
+      group.dayLabel = day;
+      group.sessionId = m.sessionId;
+    }
     group.settleTs = Math.max(group.settleTs, m.settleTs);
   }
 
@@ -76,7 +83,7 @@ export type Tab = "open" | "live" | "resolved";
 export const TAB_META: Record<Tab, { label: string; empty: string }> = {
   open: { label: "Open", empty: "No markets are taking deposits right now." },
   live: { label: "Live", empty: "No markets are being measured right now." },
-  resolved: { label: "Resolved", empty: "Nothing has settled yet." },
+  resolved: { label: "Settled", empty: "Nothing has settled yet." },
 };
 
 export function tabOf(phase: MarketPhase): Tab {
