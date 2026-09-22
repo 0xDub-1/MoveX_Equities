@@ -67,7 +67,7 @@ export const VENUES: Record<Venue, VenueMeta> = {
  * navigation, the asset registry and the routes all read it, so opening
  * crypto to the public is a single line.
  */
-export const VENUE_LIST: readonly Venue[] = ["equities"];
+export const VENUE_LIST: readonly Venue[] = ["equities", "crypto"];
 
 export function isVenueListed(venue: Venue): boolean {
   return VENUE_LIST.includes(venue);
