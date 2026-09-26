@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist_Mono, Inter, Space_Grotesk } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 
 import { Providers } from "./providers";
 import Background from "@/components/ui/Background";
@@ -57,6 +58,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Footer />
           <ToastContainer />
         </Providers>
+        <Analytics />
       </body>
     </html>
   );
