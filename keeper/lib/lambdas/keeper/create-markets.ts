@@ -19,6 +19,7 @@ import {
   easternDate,
   isTradingDay,
   dailyMarketDates,
+  ladderCalibrationDate,
   nextTradingDay,
   type DailyTarget,
 } from "../shared/calendar";
@@ -171,11 +172,14 @@ export const dailyHandler = async (event?: DailyEvent) => {
   const program = await getProgram();
 
   const { lockDate, settleDate } = dailyMarketDates(date, target);
+  // The same twenty sessions whichever run gets here, so a repaired rung
+  // matches the ones beside it.
+  const calibratedOn = ladderCalibrationDate(lockDate);
 
   const specs: MarketSpec[] = [];
   for (const symbol of PUBLISHED_TICKERS) {
     try {
-      const ladder = await dailyLadder(symbol);
+      const ladder = await dailyLadder(symbol, calibratedOn);
       for (const tier of DAILY_RUNGS[symbol] ?? ["fair"]) {
         specs.push(
           dailySpec(lockDate, settleDate, symbol, tier, ladder.strikes[tier], ladder.samplesBps),
@@ -190,7 +194,14 @@ export const dailyHandler = async (event?: DailyEvent) => {
     }
   }
 
-  logger.info("daily markets", { target, createdOn: date, lockDate, settleDate, count: specs.length });
+  logger.info("daily markets", {
+    target,
+    createdOn: date,
+    calibratedOn,
+    lockDate,
+    settleDate,
+    count: specs.length,
+  });
 
   const result = await ensureMarkets(
     program,

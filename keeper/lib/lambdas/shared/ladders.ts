@@ -16,7 +16,6 @@
 
 import { LOOKBACK_SESSIONS, type Rung } from "../strikes/config";
 import { YahooPriceHistoryProvider } from "../strikes/providers/yahoo";
-import { todayEastern } from "../strikes/providers/yahoo";
 import { takeWindow, toCloseToCloseMoves, validateWindow } from "../strikes/sessions";
 import { assertSorted, ladderBps, toBps } from "../strikes/strikes";
 import { hourlyCloses } from "./quotes";
@@ -33,13 +32,16 @@ export interface Ladder {
  *
  * Reuses the Phase 0 pipeline unchanged: same provider, same window
  * validation, same integer percentiles the program re-derives on chain.
+ *
+ * `before` is the ladder's calibration date (see `ladderCalibrationDate`),
+ * never the day the code happens to run, so a repair matches its siblings.
  */
-export async function dailyLadder(symbol: string): Promise<Ladder> {
+export async function dailyLadder(symbol: string, before: string): Promise<Ladder> {
   const provider = new YahooPriceHistoryProvider();
   const bars = await provider.dailyCloses({
     ticker: symbol,
     minSessions: LOOKBACK_SESSIONS,
-    before: todayEastern(),
+    before,
   });
 
   const window = takeWindow(toCloseToCloseMoves(bars), LOOKBACK_SESSIONS);

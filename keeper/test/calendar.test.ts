@@ -8,7 +8,9 @@ import {
   hourlySlots,
   isHalfDay,
   isTradingDay,
+  ladderCalibrationDate,
   nextTradingDay,
+  previousTradingDay,
 } from '../lib/lambdas/shared/calendar';
 
 describe('isTradingDay', () => {
@@ -112,6 +114,46 @@ describe('nextTradingDay', () => {
   it('skips a holiday too', () => {
     // Thanksgiving is Thursday 26 Nov 2026; the 27th is a half day but open.
     expect(nextTradingDay('2026-11-25')).toBe('2026-11-27');
+  });
+});
+
+describe('previousTradingDay', () => {
+  it('skips the weekend', () => {
+    expect(previousTradingDay('2026-09-28')).toBe('2026-09-25'); // Mon -> Fri
+  });
+
+  it('skips a holiday too', () => {
+    // Thanksgiving is Thursday 26 Nov 2026.
+    expect(previousTradingDay('2026-11-27')).toBe('2026-11-25');
+  });
+
+  it('undoes nextTradingDay', () => {
+    for (const day of ['2026-09-11', '2026-09-16', '2026-11-25']) {
+      expect(previousTradingDay(nextTradingDay(day))).toBe(day);
+    }
+  });
+});
+
+describe('ladderCalibrationDate', () => {
+  /**
+   * The 25 September 2026 repair. The 15:55 run on Friday created part of the
+   * ladder locking Monday 28th, calibrated on the sessions before Friday. The
+   * missing rungs were created by hand on Sunday, and "before today" then
+   * meant before Sunday, so they included Friday's session and their
+   * siblings did not. Every run for that ladder must read the same window.
+   */
+  it('is the day the 15:55 run creates the ladder on, whichever day the code runs', () => {
+    expect(ladderCalibrationDate('2026-09-28')).toBe('2026-09-25');
+  });
+
+  it('matches the creation day of the evening run and the target of the morning backstop', () => {
+    for (const createdOn of ['2026-09-14', '2026-09-18', '2026-11-25']) {
+      const evening = dailyMarketDates(createdOn, 'next');
+      expect(ladderCalibrationDate(evening.lockDate)).toBe(createdOn);
+    }
+    // The backstop on Monday repairs the ladder Friday's run created.
+    const backstop = dailyMarketDates('2026-09-28', 'today');
+    expect(ladderCalibrationDate(backstop.lockDate)).toBe('2026-09-25');
   });
 });
 

@@ -22,7 +22,7 @@ import {
   LIVE_DEPOSITS,
   LIVE_MAX_MULTIPLE_BPS,
 } from "./config";
-import { RETRY_DELAY_MS, shouldRetrySend } from "./sending";
+import { PACE_MS, retryDelayMs, shouldRetrySend } from "./sending";
 import { bn, marketPda, priceFeedPda, sessionBytes, underlyingBytes, vaultPda, TIER_VARIANT } from "./solana";
 
 const logger = new Logger({ serviceName: "movex-equities-markets" });
@@ -60,6 +60,7 @@ export async function ensureMarkets(
   const created: string[] = [];
   const existing: string[] = [];
   const failed: string[] = [];
+  let sent = 0;
 
   for (const spec of specs) {
     const label = `${spec.symbol}/${spec.sessionId}/${spec.tier}`;
@@ -108,24 +109,34 @@ export async function ensureMarkets(
           })
           .rpc();
 
+      // Space the creations out rather than firing them back to back.
+      if (sent > 0) await sleep(PACE_MS);
+      sent++;
+
       for (let attempt = 1; ; attempt++) {
         try {
           await send();
           break;
         } catch (err) {
           // A send whose confirmation timed out may still have landed, and
-          // the chain is the only honest answer to that.
-          if (await program.provider.connection.getAccountInfo(market)) {
+          // the chain is the only honest answer to that. The question can be
+          // rate limited too, in which case the retry below finds out.
+          const landed = await program.provider.connection
+            .getAccountInfo(market)
+            .then(Boolean, () => false);
+          if (landed) {
             logger.warn("market landed despite a failed send", { label, attempt });
             break;
           }
           if (!shouldRetrySend(err, attempt)) throw err;
+          const waitMs = retryDelayMs(err, attempt);
           logger.warn("send failed, retrying", {
             label,
             attempt,
+            waitMs,
             error: err instanceof Error ? err.message.split("\n")[0] : String(err),
           });
-          await sleep(RETRY_DELAY_MS);
+          await sleep(waitMs);
         }
       }
 

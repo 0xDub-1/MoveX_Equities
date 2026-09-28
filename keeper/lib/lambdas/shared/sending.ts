@@ -33,8 +33,50 @@ export function isProgramVerdict(err: unknown): boolean {
   return /custom program error|AnchorError|Error Code: |already in use/i.test(msg);
 }
 
+/**
+ * How many times a send the RPC rate limited is tried before it is given up
+ * on. More than a dropped send gets, because a 429 is a window that closes by
+ * itself if the sender waits, not a transaction that went missing.
+ */
+export const RATE_LIMIT_ATTEMPTS = 5;
+
+/** The first wait after a 429, doubled on every attempt after it. */
+export const RATE_LIMIT_BASE_MS = 2_000;
+
+/** No single wait longer than this, so one rung cannot spend the whole run. */
+export const RATE_LIMIT_MAX_MS = 16_000;
+
+/**
+ * A pause between two market creations in the same run.
+ *
+ * On 23 and 25 September 2026 the daily run lost two and then three rungs to
+ * `429 Too Many Requests`: nine creations back to back, each with its own
+ * existence checks, on the same devnet key the every-minute lambdas share.
+ */
+export const PACE_MS = 500;
+
+/** Whether the RPC turned the request away for sending too many. */
+export function isRateLimited(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /\b429\b|too many requests|rate limit/i.test(msg);
+}
+
 /** The whole policy: try again, or record the failure and move on. */
 export function shouldRetrySend(err: unknown, attempt: number): boolean {
-  if (attempt >= SEND_ATTEMPTS) return false;
-  return !isProgramVerdict(err);
+  if (isProgramVerdict(err)) return false;
+  return attempt < (isRateLimited(err) ? RATE_LIMIT_ATTEMPTS : SEND_ATTEMPTS);
+}
+
+/**
+ * How long to wait before attempt `attempt + 1`.
+ *
+ * A dropped send only needs a fresh blockhash. A rate limit needs the window
+ * to pass, so the wait doubles from two seconds up to sixteen, plus up to a
+ * second of jitter so two lambdas that were limited together do not come back
+ * together.
+ */
+export function retryDelayMs(err: unknown, attempt: number, random: () => number = Math.random): number {
+  if (!isRateLimited(err)) return RETRY_DELAY_MS;
+  const backoff = Math.min(RATE_LIMIT_BASE_MS * 2 ** (attempt - 1), RATE_LIMIT_MAX_MS);
+  return backoff + Math.floor(random() * 1_000);
 }

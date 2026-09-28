@@ -19,9 +19,11 @@ import { LambdaInvoke } from 'aws-cdk-lib/aws-scheduler-targets';
  *
  *   Publisher      every minute      writes each ticker's PriceFeed
  *   HourlyMarkets  20:00 ET          creates the NEXT session's intraday
- *                  09:00 ET          markets, with a morning backstop
+ *                  20:10-22:50 ET    markets, retries every 20 minutes and
+ *                  09:00 ET          keeps a morning backstop
  *   DailyMarkets   15:55 ET          creates the next close-to-close markets,
- *                  09:00 ET          with a morning backstop of its own
+ *                  16:10-18:50 ET    retries every 20 minutes and keeps a
+ *                  09:00 ET          morning backstop of its own
  *   Crank          every minute      locks and settles whatever is due
  *   Seeder         every 10 min      funds both sides, claims winnings (devnet)
  *
@@ -147,20 +149,23 @@ export class KeeperStack extends cdk.Stack {
       Duration.seconds(60),
     );
 
-    // Six market creations, each its own transaction.
+    // Six market creations, each its own transaction. Six minutes rather
+    // than three so a run the RPC rate limits can wait the limit out: up to
+    // about half a minute of backoff per rung, plus the pause between them.
     this.lambdas['hourlyMarkets'] = this.makeLambda(
       'HourlyMarketsLambda',
       'lib/lambdas/keeper/create-markets.ts',
       'hourlyHandler',
-      Duration.minutes(3),
+      Duration.minutes(6),
     );
 
-    // Five markets across three tickers, each needing a calibrated ladder.
+    // Nine markets across three tickers, each needing a calibrated ladder.
+    // Six minutes for the same reason as the hourly one.
     this.lambdas['dailyMarkets'] = this.makeLambda(
       'DailyMarketsLambda',
       'lib/lambdas/keeper/create-markets.ts',
       'dailyHandler',
-      Duration.minutes(3),
+      Duration.minutes(6),
     );
 
     this.lambdas['crank'] = this.makeLambda(
@@ -327,6 +332,21 @@ export class KeeperStack extends cdk.Stack {
       ScheduleTargetInput.fromObject({ session: 'next' }),
     );
 
+    // Retries the same evening, every twenty minutes until 22:50. A run the
+    // RPC rate limited leaves rungs missing, and the morning backstop alone
+    // would give them an hour of deposits instead of a night. A run that
+    // finds every market already there only reads the chain.
+    //
+    // At :10, :30 and :50, clear of the seeder's :05/:15/... ticks and the
+    // crypto markets' :07/:17/... ones, which share the same RPC key.
+    this.schedule(
+      'HourlyRetrySchedule',
+      'hourlyMarkets',
+      ScheduleExpression.cron({ minute: '10,30,50', hour: '20-22', weekDay: 'MON-FRI', timeZone: ny }),
+      "Retry: create any of the next session's intraday markets still missing",
+      ScheduleTargetInput.fromObject({ session: 'next' }),
+    );
+
     // A backstop an hour before the first lock. When the evening run did its
     // job this finds every market already there and creates nothing; when it
     // did not, the day still gets its markets with a shorter window.
@@ -345,6 +365,23 @@ export class KeeperStack extends cdk.Stack {
       'dailyMarkets',
       ScheduleExpression.cron({ minute: '55', hour: '15', weekDay: 'MON-FRI', timeZone: ny }),
       'Create the close-to-close markets that lock at the next session\'s close',
+      ScheduleTargetInput.fromObject({ session: 'next' }),
+    );
+
+    // Retries after the close, every twenty minutes until 18:50, for the
+    // same ladder as the 15:55 run. On 23 and 25 September 2026 that run lost
+    // rungs to a rate limited RPC, and the 25th's stayed missing all weekend
+    // because the next backstop was Monday at 09:00. Every retry reads the
+    // same twenty sessions (see `ladderCalibrationDate`), so what it creates
+    // matches the rungs already on chain.
+    //
+    // Starting at 16:10 rather than 16:00, when the crank is busy locking
+    // the day's markets, and at :10, :30 and :50 like the hourly retries.
+    this.schedule(
+      'DailyRetrySchedule',
+      'dailyMarkets',
+      ScheduleExpression.cron({ minute: '10,30,50', hour: '16-18', weekDay: 'MON-FRI', timeZone: ny }),
+      'Retry: create any rung of the next ladder the 15:55 run failed to',
       ScheduleTargetInput.fromObject({ session: 'next' }),
     );
 

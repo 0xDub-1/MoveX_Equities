@@ -30,6 +30,7 @@ import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import {
   easternDate,
   isTradingDay,
+  ladderCalibrationDate,
   nextTradingDay,
 } from "../lib/lambdas/shared/calendar";
 import { HOURLY_TICKER, PUBLISHED_TICKERS } from "../lib/lambdas/shared/config";
@@ -101,8 +102,12 @@ async function main() {
   console.log(`  samples ${hourly.samplesBps.join(" ")}`);
 
   // -- daily, locking at the session's close ----------------------------------
+  // Calibrated as of the session before, exactly as the 15:55 run that should
+  // have created it, whichever day this script is run on.
+  const calibratedOn = ladderCalibrationDate(session);
+  console.log(`daily ladders calibrated on the sessions before ${calibratedOn}`);
   for (const symbol of PUBLISHED_TICKERS) {
-    const ladder = await dailyLadder(symbol);
+    const ladder = await dailyLadder(symbol, calibratedOn);
     console.log(
       `daily ${symbol}: TIGHT ${(ladder.strikes.tight / 100).toFixed(2)}%  ` +
         `FAIR ${(ladder.strikes.fair / 100).toFixed(2)}%  WIDE ${(ladder.strikes.wide / 100).toFixed(2)}%`,

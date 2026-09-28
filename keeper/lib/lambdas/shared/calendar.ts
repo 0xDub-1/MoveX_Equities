@@ -172,6 +172,17 @@ export function nextTradingDay(date: string): string {
   throw new Error(`no trading day found within 15 days of ${date}`);
 }
 
+/** The trading day strictly before `date`. */
+export function previousTradingDay(date: string): string {
+  const cursor = new Date(`${date}T00:00:00Z`);
+  for (let i = 0; i < 15; i++) {
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+    const candidate = cursor.toISOString().slice(0, 10);
+    if (isTradingDay(candidate)) return candidate;
+  }
+  throw new Error(`no trading day found within 15 days before ${date}`);
+}
+
 export interface HourlySlot {
   /** Minutes since ET midnight when deposits close and the reference is taken. */
   lockMinutes: number;
@@ -230,4 +241,20 @@ export function dailyMarketDates(
 ): { lockDate: string; settleDate: string } {
   const lockDate = target === "today" ? createdOn : nextTradingDay(createdOn);
   return { lockDate, settleDate: nextTradingDay(lockDate) };
+}
+
+/**
+ * The day a daily ladder is calibrated as of: its twenty sessions are the
+ * ones completed before this date.
+ *
+ * It is the session before the lock, which is the day the 15:55 run creates
+ * the ladder on. Tying it to the ladder rather than to the day the code runs
+ * means every run that creates or repairs a rung reads the same twenty
+ * sessions: the 15:55 run, its evening retries, the next morning's backstop
+ * and a hand run over the weekend. Reading "before today" instead let the
+ * 25 September repair of TSLA and SPY on 27 September include Friday's
+ * session while the rungs beside them did not.
+ */
+export function ladderCalibrationDate(lockDate: string): string {
+  return previousTradingDay(lockDate);
 }

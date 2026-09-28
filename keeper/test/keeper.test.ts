@@ -4,7 +4,7 @@ import { KeeperStack } from '../lib/keeper-stack';
 
 let template: Template;
 
-const EQUITIES_SCHEDULES = 7;
+const EQUITIES_SCHEDULES = 9;
 const CRYPTO_SCHEDULES = 3;
 
 beforeAll(() => {
@@ -94,7 +94,7 @@ describe('permissions', () => {
 });
 
 describe('schedules', () => {
-  it('runs ten of them', () => {
+  it('runs twelve of them', () => {
     template.resourceCountIs('AWS::Scheduler::Schedule', EQUITIES_SCHEDULES + CRYPTO_SCHEDULES);
   });
 
@@ -143,6 +143,44 @@ describe('schedules', () => {
       ScheduleExpressionTimezone: 'America/New_York',
       Target: Match.objectLike({ Input: JSON.stringify({ session: 'today' }) }),
     });
+  });
+
+  /**
+   * On 25 September 2026 a rate limited RPC cost the 15:55 run three rungs,
+   * and they stayed off the board all weekend because the next look was
+   * Monday's backstop. The evening retries target the same ladder, off the
+   * seeder's minutes, and are no-ops when nothing is missing.
+   */
+  it('retries the daily ladder through the evening, off the seeder minutes', () => {
+    template.hasResourceProperties('AWS::Scheduler::Schedule', {
+      ScheduleExpression: 'cron(10,30,50 16-18 ? * MON-FRI *)',
+      ScheduleExpressionTimezone: 'America/New_York',
+      Target: Match.objectLike({ Input: JSON.stringify({ session: 'next' }) }),
+    });
+  });
+
+  it('retries the next session intraday markets through the evening', () => {
+    template.hasResourceProperties('AWS::Scheduler::Schedule', {
+      ScheduleExpression: 'cron(10,30,50 20-22 ? * MON-FRI *)',
+      ScheduleExpressionTimezone: 'America/New_York',
+      Target: Match.objectLike({ Input: JSON.stringify({ session: 'next' }) }),
+    });
+  });
+
+  /**
+   * A retry schedule is only safe if a slow run is over before the next one
+   * starts, or two of them would race to create the same rung.
+   */
+  it('lets a rate limited market run wait, and still end before the next retry', () => {
+    const functions = Object.values(template.findResources('AWS::Lambda::Function'));
+    const market = functions.filter((f) =>
+      ['index.hourlyHandler', 'index.dailyHandler'].includes(f.Properties.Handler),
+    );
+    expect(market).toHaveLength(2);
+    for (const f of market) {
+      expect(f.Properties.Timeout).toBe(360);
+      expect(f.Properties.Timeout).toBeLessThan(20 * 60);
+    }
   });
 
   it('creates the daily markets the session before the close they lock at', () => {
