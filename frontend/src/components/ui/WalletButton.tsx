@@ -27,7 +27,7 @@ export default function WalletButton({
   size?: "md" | "lg";
 }) {
   const mounted = useMounted();
-  const { publicKey, connected, connecting, disconnect, wallet } = useWallet();
+  const { publicKey, connected, connecting, disconnect, wallet, select } = useWallet();
   const { setVisible } = useWalletModal();
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -70,8 +70,13 @@ export default function WalletButton({
     return (
       <button
         type="button"
-        onClick={() => setVisible(true)}
-        disabled={connecting}
+        onClick={() => {
+          // A wallet left selected but not connected (a stuck or failed
+          // attempt) would make picking it again a no-op. Clear it first.
+          // Never disabled: a connect that hangs must not lock the button.
+          if (wallet) select(null);
+          setVisible(true);
+        }}
         className={cn(
           height,
           "inline-flex items-center gap-2 px-3.5 rounded-md bg-brand text-[#06070A] text-[13px] font-semibold",
